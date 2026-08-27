@@ -14,10 +14,17 @@ const app = express();
 app.use(helmet());
 
 // Cross-Origin Resource Sharing (CORS) Configuration
+// const allowedOrigins = [
+//   process.env.CLIENT_URL || 'http://localhost:5173',
+//   'http://localhost:3000'
+// ];
+
 const allowedOrigins = [
-  process.env.CLIENT_URL || 'http://localhost:5173',
+  'https://ecommerce-website-three-plum-33.vercel.app',
+  process.env.CLIENT_URL,
+  'http://localhost:5173',
   'http://localhost:3000'
-];
+].filter(Boolean);
 
 app.use(
   cors({
