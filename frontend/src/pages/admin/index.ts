@@ -1,0 +1,11 @@
+export { AdminDashboardPage } from './AdminDashboard';
+export { AdminProducts } from './AdminProducts';
+export { AdminAddProduct } from './AdminAddProduct';
+export { AdminEditProduct } from './AdminEditProduct';
+export { AdminCategories } from './AdminCategories';
+export { AdminBrands } from './AdminBrands';
+export { AdminOrders } from './AdminOrders';
+export { AdminCustomers } from './AdminCustomers';
+export { AdminCoupons } from './AdminCoupons';
+export { AdminReviews } from './AdminReviews';
+export { AdminSettings } from './AdminSettings';
