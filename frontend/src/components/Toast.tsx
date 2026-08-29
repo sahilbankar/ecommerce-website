@@ -6,6 +6,10 @@ export const ToasterContainer: React.FC = () => {
   return (
     <HotToaster
       position="top-right"
+      containerStyle={{
+        top: 80,
+        right: 16,
+      }}
       toastOptions={{
         duration: 4000,
         className: 'dark:bg-gray-900 dark:text-gray-100 dark:border dark:border-gray-800',

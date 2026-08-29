@@ -57,12 +57,13 @@ const createReview = asyncHandler(async (req, res, next) => {
     alreadyReviewed.rating = Number(rating);
     if (comment) alreadyReviewed.comment = comment.trim();
     if (title !== undefined) alreadyReviewed.title = title;
+    alreadyReviewed.status = req.user.role === 'admin' ? alreadyReviewed.status : 'pending';
     await alreadyReviewed.save();
 
     await Review.getAverageRating(productId);
     await alreadyReviewed.populate('user', 'name avatar');
     return res.status(200).json(
-      new ApiResponse(200, { review: alreadyReviewed }, 'Review updated successfully')
+      new ApiResponse(200, { review: alreadyReviewed }, 'Review submitted and sent to pending for approval')
     );
   }
 
@@ -80,7 +81,7 @@ const createReview = asyncHandler(async (req, res, next) => {
     title: title || '',
     comment: comment.trim(),
     verifiedPurchase: !!hasPurchased,
-    status: 'approved'
+    status: 'pending'
   };
 
   if (orderId || hasPurchased?._id) {
@@ -107,7 +108,7 @@ const createReview = asyncHandler(async (req, res, next) => {
   await review.populate('user', 'name avatar');
 
   res.status(201).json(
-    new ApiResponse(201, { review }, 'Review submitted successfully')
+    new ApiResponse(201, { review }, 'Review submitted successfully and sent to pending for admin approval')
   );
 });
 
@@ -121,15 +122,23 @@ const updateReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError(404, 'Review not found'));
   }
 
-  if (review.user.toString() !== req.user._id.toString() && req.user.role !== 'admin' && process.env.NODE_ENV === 'production') {
+  if (review.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
     return next(new ApiError(403, 'Not authorized to update this review'));
   }
 
-  const { rating, title, comment } = req.body;
+  const { rating, title, comment, status } = req.body;
 
   if (rating) review.rating = Number(rating);
   if (title !== undefined) review.title = title;
   if (comment) review.comment = comment.trim();
+  
+  if (req.user.role === 'admin' && status) {
+    review.status = status;
+    if (status === 'rejected') review.rejectedBy = 'admin';
+    if (status === 'approved') review.rejectedBy = 'none';
+  } else if (req.user.role !== 'admin') {
+    review.status = 'pending';
+  }
 
   await review.save();
   await Review.getAverageRating(review.product);
@@ -149,15 +158,28 @@ const deleteReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError(404, 'Review not found'));
   }
 
-  if (review.user.toString() !== req.user._id.toString() && req.user.role !== 'admin' && process.env.NODE_ENV === 'production') {
+  if (review.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
     return next(new ApiError(403, 'Not authorized to delete this review'));
   }
 
   const productId = review.product;
   const orderId = review.order;
 
-  review.status = 'rejected';
-  await review.save();
+  if (req.user.role === 'admin') {
+    // If deleted by Admin, mark as rejected by admin so it moves to Rejected section
+    review.status = 'rejected';
+    review.rejectedBy = 'admin';
+    await review.save();
+
+    await Review.getAverageRating(productId);
+
+    return res.status(200).json(
+      new ApiResponse(200, { review }, 'Review rejected by admin successfully')
+    );
+  }
+
+  // If deleted by Customer themselves, delete document
+  await review.deleteOne();
 
   // Recalculate rating
   await Review.getAverageRating(productId);
@@ -175,7 +197,7 @@ const deleteReview = asyncHandler(async (req, res, next) => {
   }
 
   res.status(200).json(
-    new ApiResponse(200, null, 'Review cancelled and marked as rejected successfully')
+    new ApiResponse(200, null, 'Review deleted successfully')
   );
 });
 
@@ -223,6 +245,12 @@ const updateReviewStatus = asyncHandler(async (req, res, next) => {
   }
 
   review.status = status;
+  if (status === 'rejected') {
+    review.rejectedBy = 'admin';
+  } else if (status === 'approved') {
+    review.rejectedBy = 'none';
+  }
+
   await review.save();
 
   // Recalculate product rating

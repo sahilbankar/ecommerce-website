@@ -164,15 +164,12 @@ export const AdminReviews: React.FC = () => {
                     {review.verifiedPurchase && (
                       <span className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-full font-medium">✓ Verified</span>
                     )}
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${statusColors[review.status] || ''}`}>{review.status}</span>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize ${statusColors[review.status] || ''}`}>
+                      {review.status === 'rejected' ? 'Rejected by Admin' : review.status}
+                    </span>
                   </div>
                   <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5 font-medium">
                     {productTitle}
-                    {review.status === 'rejected' && review.order && (
-                      <span className="text-gray-500 ml-2">
-                        (Order ID: #{typeof review.order === 'string' ? review.order.slice(-8).toUpperCase() : review.order._id?.slice(-8).toUpperCase()} - Cancelled by user)
-                      </span>
-                    )}
                   </p>
                   <div className="flex items-center gap-1 mt-1">
                     {Array.from({ length: 5 }).map((_, i) => (
@@ -184,23 +181,23 @@ export const AdminReviews: React.FC = () => {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-xs text-gray-400 dark:text-gray-500">{date}</span>
-                {review.status === 'pending' && (
-                  <>
-                    <button
-                      onClick={() => handleStatusChange(review._id, 'approved')}
-                      className="p-1.5 rounded-lg text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
-                      title="Approve"
-                    >
-                      <FiCheck className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleStatusChange(review._id, 'rejected')}
-                      className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                      title="Reject"
-                    >
-                      <FiX className="h-4 w-4" />
-                    </button>
-                  </>
+                {review.status !== 'approved' && (
+                  <button
+                    onClick={() => handleStatusChange(review._id, 'approved')}
+                    className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
+                    title="Approve Review"
+                  >
+                    <FiCheck className="h-4 w-4" />
+                  </button>
+                )}
+                {review.status !== 'rejected' && (
+                  <button
+                    onClick={() => handleStatusChange(review._id, 'rejected')}
+                    className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    title="Reject Review"
+                  >
+                    <FiX className="h-4 w-4" />
+                  </button>
                 )}
                 <button 
                   onClick={() => setEditingReview({ ...review, originalStatus: review.status })}

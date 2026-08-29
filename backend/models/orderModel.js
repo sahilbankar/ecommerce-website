@@ -106,6 +106,10 @@ const orderSchema = new mongoose.Schema(
     },
     deliveredAt: {
       type: Date
+    },
+    cancellationReason: {
+      type: String,
+      default: ''
     }
   },
   {
@@ -116,6 +120,19 @@ const orderSchema = new mongoose.Schema(
 // Index for filtering orders by creation date
 orderSchema.index({ createdAt: -1 });
 
+// Pre-save hook: Automatically mark payment status as Paid if order status is Delivered
+orderSchema.pre('save', function (next) {
+  if (this.orderStatus === 'Delivered') {
+    this.isDelivered = true;
+    if (!this.deliveredAt) this.deliveredAt = new Date();
+    if (!this.isPaid) {
+      this.isPaid = true;
+      if (!this.paidAt) this.paidAt = new Date();
+    }
+  }
+  next();
+});
+
 // Instance Method: Update order status
 orderSchema.methods.updateStatus = async function (status, tracking = '') {
   this.orderStatus = status;
@@ -123,11 +140,10 @@ orderSchema.methods.updateStatus = async function (status, tracking = '') {
 
   if (status === 'Delivered') {
     this.isDelivered = true;
-    this.deliveredAt = Date.now();
-    
-    if (this.paymentMethod === 'COD' && !this.isPaid) {
+    if (!this.deliveredAt) this.deliveredAt = Date.now();
+    if (!this.isPaid) {
       this.isPaid = true;
-      this.paidAt = Date.now();
+      if (!this.paidAt) this.paidAt = Date.now();
     }
   }
 

@@ -35,6 +35,7 @@ export interface Order {
   paidAt?: string;
   isDelivered: boolean;
   trackingNumber?: string;
+  cancellationReason?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -111,9 +112,11 @@ export const fetchOrderById = createAsyncThunk(
 
 export const cancelOrderAsync = createAsyncThunk(
   'orders/cancel',
-  async (id: string, { rejectWithValue }) => {
+  async (arg: string | { orderId: string; reason?: string }, { rejectWithValue }) => {
     try {
-      const res = await api.put('/orders/' + id + '/cancel');
+      const id = typeof arg === 'string' ? arg : arg.orderId;
+      const reason = typeof arg === 'string' ? undefined : arg.reason;
+      const res = await api.put('/orders/' + id + '/cancel', { cancellationReason: reason });
       return res.data?.data?.order as Order;
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to cancel order');

@@ -234,7 +234,7 @@ export const MyOrders: React.FC = () => {
   };
 
   const canCancel = (order: Order) =>
-    order.orderStatus === 'Pending' || order.orderStatus === 'Confirmed' || order.orderStatus === 'Processing';
+    !['Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(order.orderStatus);
 
   if (isLoading) {
     return (
@@ -780,6 +780,12 @@ export const MyOrders: React.FC = () => {
                 <span>Total Amount Paid / Payable</span>
                 <span className="text-primary-600 dark:text-primary-400">{formatCurrency(selectedOrderModal?.totalPrice)}</span>
               </div>
+              {selectedOrderModal?.cancellationReason && (
+                <div className="flex justify-between text-xs font-semibold text-red-600 dark:text-red-400 pt-1">
+                  <span>Cancellation Reason</span>
+                  <span>{selectedOrderModal.cancellationReason}</span>
+                </div>
+              )}
             </div>
 
             {/* Cancel Order Action inside Modal */}

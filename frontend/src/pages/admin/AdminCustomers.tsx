@@ -336,7 +336,6 @@ export const AdminCustomers: React.FC = () => {
               <thead>
                 <tr className="bg-gray-50 dark:bg-gray-800/60 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide border-b border-gray-100 dark:border-gray-800">
                   <th className="px-5 py-3.5 font-bold">Customer Profile</th>
-                  <th className="px-4 py-3.5 font-bold">Contact</th>
                   <th className="px-4 py-3.5 font-bold text-center">Orders</th>
                   <th className="px-4 py-3.5 font-bold">Total Spent</th>
                   <th className="px-4 py-3.5 font-bold">Last Login</th>
@@ -394,14 +393,11 @@ export const AdminCustomers: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-xs text-gray-600 dark:text-gray-300">
-                        {customer.phone || 'N/A'}
-                      </td>
                       <td className="px-4 py-4 text-center font-bold text-gray-800 dark:text-gray-200">
                         {customer.ordersCount || 0}
                       </td>
                       <td className="px-4 py-4 font-bold text-gray-900 dark:text-white">
-                        ${(customer.totalSpent || 0).toFixed(2)}
+                        {formatCurrency(customer.totalSpent || 0)}
                       </td>
                       <td className="px-4 py-4 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                         {formatActivityTime(customer.lastLogin || customer.createdAt)}

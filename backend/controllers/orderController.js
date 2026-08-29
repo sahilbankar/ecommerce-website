@@ -6,56 +6,8 @@ const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 
-// Helper: Auto progress order status based on time elapsed since creation
+// Helper: Auto progress order status (kept for reference, preserves manual admin transitions)
 const autoProgressOrder = async (order) => {
-  if (!order || order.orderStatus === 'Cancelled' || order.orderStatus === 'Delivered') {
-    return order;
-  }
-
-  const elapsedMs = Date.now() - new Date(order.createdAt).getTime();
-  const elapsedMins = elapsedMs / (1000 * 60);
-
-  let targetStatus = 'Pending';
-  if (elapsedMins >= 25) {
-    targetStatus = 'Delivered';
-  } else if (elapsedMins >= 20) {
-    targetStatus = 'Out for Delivery';
-  } else if (elapsedMins >= 15) {
-    targetStatus = 'Shipped';
-  } else if (elapsedMins >= 10) {
-    targetStatus = 'Processing';
-  } else if (elapsedMins >= 5) {
-    targetStatus = 'Confirmed';
-  }
-
-  // Define progression precedence
-  const statusPrecedence = {
-    'Pending': 0,
-    'Confirmed': 1,
-    'Processing': 2,
-    'Shipped': 3,
-    'Out for Delivery': 4,
-    'Delivered': 5
-  };
-
-  const currentVal = statusPrecedence[order.orderStatus] || 0;
-  const targetVal = statusPrecedence[targetStatus] || 0;
-
-  // Only progress forward
-  if (targetVal > currentVal) {
-    order.orderStatus = targetStatus;
-    if (targetStatus === 'Delivered') {
-      order.isDelivered = true;
-      order.deliveredAt = Date.now();
-      
-      if (order.paymentMethod === 'COD' && !order.isPaid) {
-        order.isPaid = true;
-        order.paidAt = Date.now();
-      }
-    }
-    await order.save();
-  }
-
   return order;
 };
 
@@ -293,6 +245,11 @@ const cancelOrder = asyncHandler(async (req, res, next) => {
 
   if (order.orderStatus === 'Cancelled') {
     return next(new ApiError(400, 'Order is already cancelled'));
+  }
+
+  const { cancellationReason, reason } = req.body || {};
+  if (cancellationReason || reason) {
+    order.cancellationReason = (cancellationReason || reason).trim();
   }
 
   // Restore product stock

@@ -297,6 +297,7 @@ export const AdminOrders: React.FC = () => {
                 { label: 'Paid', value: selectedOrder.isPaid ? 'Yes' : 'No' },
                 { label: 'Order Date', value: formatDate(selectedOrder.createdAt) },
                 { label: 'Tracking #', value: selectedOrder.trackingNumber || 'N/A' },
+                ...(selectedOrder.cancellationReason ? [{ label: 'Cancellation Reason', value: selectedOrder.cancellationReason }] : []),
               ].map(row => (
                 <div key={row.label} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
                   <span className="text-gray-500 dark:text-gray-400">{row.label}</span>

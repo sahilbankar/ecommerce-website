@@ -12,8 +12,8 @@ module.exports = {
   },
   cookieOptions: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    secure: true, // Always true for SameSite=None
+    sameSite: 'none', // Allow cross-origin cookie sharing
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
   }
 };

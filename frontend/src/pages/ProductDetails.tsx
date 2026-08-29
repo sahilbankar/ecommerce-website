@@ -187,6 +187,7 @@ export const ProductDetails: React.FC = () => {
     }
   };
 
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
@@ -199,14 +200,23 @@ export const ProductDetails: React.FC = () => {
     const prodId = product._id || product.id;
     setIsSubmittingReview(true);
     try {
-      await api.post('/reviews', {
-        productId: prodId,
-        rating: newReviewRating,
-        comment: newReviewComment.trim(),
-      });
-      notifySuccess('Review submitted successfully!');
+      if (editingReviewId) {
+        await api.put(`/reviews/${editingReviewId}`, {
+          rating: newReviewRating,
+          comment: newReviewComment.trim(),
+        });
+        notifySuccess('Review updated successfully!');
+      } else {
+        await api.post('/reviews', {
+          productId: prodId,
+          rating: newReviewRating,
+          comment: newReviewComment.trim(),
+        });
+        notifySuccess('Review submitted successfully!');
+      }
       setNewReviewComment('');
       setNewReviewRating(5);
+      setEditingReviewId(null);
 
       // Refresh product details & reviews
       const [prodRes, revRes] = await Promise.all([
@@ -218,7 +228,7 @@ export const ProductDetails: React.FC = () => {
       }
       setReviews(revRes.data?.data?.reviews || []);
     } catch (err: any) {
-      notifyError(err.response?.data?.message || 'Failed to submit review');
+      notifyError(err.response?.data?.message || 'Failed to save review');
     } finally {
       setIsSubmittingReview(false);
     }
@@ -531,7 +541,24 @@ export const ProductDetails: React.FC = () => {
           <div className="space-y-8 max-w-3xl">
             {/* Write a Review Form */}
             <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-6 space-y-4">
-              <h4 className="text-base font-bold text-gray-900 dark:text-white">Write a Customer Review</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-base font-bold text-gray-900 dark:text-white">
+                  {editingReviewId ? 'Edit Your Review' : 'Write a Customer Review'}
+                </h4>
+                {editingReviewId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingReviewId(null);
+                      setNewReviewComment('');
+                      setNewReviewRating(5);
+                    }}
+                    className="text-xs font-semibold text-gray-500 hover:text-gray-700 underline"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+              </div>
               <form onSubmit={handleReviewSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
@@ -572,13 +599,28 @@ export const ProductDetails: React.FC = () => {
                     className="w-full px-4 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 resize-none placeholder-gray-400"
                   />
                 </div>
-                <Button
-                  type="submit"
-                  disabled={isSubmittingReview || !newReviewComment.trim()}
-                  className="w-full sm:w-auto"
-                >
-                  {isSubmittingReview ? 'Submitting...' : 'Submit Review'}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingReview || !newReviewComment.trim()}
+                    className="w-full sm:w-auto"
+                  >
+                    {isSubmittingReview ? (editingReviewId ? 'Updating...' : 'Submitting...') : (editingReviewId ? 'Update Review' : 'Submit Review')}
+                  </Button>
+                  {editingReviewId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingReviewId(null);
+                        setNewReviewComment('');
+                        setNewReviewRating(5);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
               </form>
             </div>
 
@@ -593,6 +635,8 @@ export const ProductDetails: React.FC = () => {
                     review.user?.id === (currentUser as any)._id ||
                     review.user === (currentUser as any)._id
                   );
+
+                  const isAdmin = currentUser?.role === 'admin';
 
                   return (
                     <div key={review._id} className="border-b border-gray-100 dark:border-gray-800 pb-4">
@@ -612,11 +656,12 @@ export const ProductDetails: React.FC = () => {
                           </div>
                         </div>
 
-                        {isMyReview && (
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          {isMyReview && (
                             <button
                               type="button"
                               onClick={() => {
+                                setEditingReviewId(review._id);
                                 setNewReviewRating(review.rating);
                                 setNewReviewComment(review.comment);
                                 window.scrollTo({ top: 400, behavior: 'smooth' });
@@ -626,16 +671,18 @@ export const ProductDetails: React.FC = () => {
                             >
                               <FiEdit2 className="h-4 w-4" />
                             </button>
+                          )}
+                          {(isMyReview || isAdmin) && (
                             <button
                               type="button"
                               onClick={() => handleDeleteReview(review._id)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                              title="Delete / Cancel Review"
+                              className="p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                              title={isAdmin && !isMyReview ? "Delete / Reject Review (Admin)" : "Delete Review"}
                             >
                               <FiTrash2 className="h-4 w-4" />
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                       <p className="mt-2.5 text-xs text-gray-600 dark:text-gray-400">
                         {review.comment}

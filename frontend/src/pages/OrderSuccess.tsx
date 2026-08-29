@@ -1,11 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { FiCheckCircle, FiArrowRight, FiShoppingBag, FiPackage } from 'react-icons/fi';
+import { FiCheckCircle, FiArrowRight, FiShoppingBag, FiPackage, FiXCircle } from 'react-icons/fi';
 import Button from '../components/Button';
 import { AppDispatch, RootState } from '../redux/store';
-import { fetchOrderById } from '../redux/slices/orderSlice';
+import { fetchOrderById, cancelOrderAsync, Order } from '../redux/slices/orderSlice';
 import { formatCurrency } from '../utils';
+import { notifySuccess, notifyError } from '../components/Toast';
 
 export const OrderSuccess: React.FC = () => {
   const navigate = useNavigate();
@@ -17,6 +18,10 @@ export const OrderSuccess: React.FC = () => {
   const { currentOrder, isLoading } = useSelector((state: RootState) => state.orders);
   const user = useSelector((state: RootState) => state.auth.user);
 
+  const [localOrder, setLocalOrder] = useState<Order | null>(stateOrder || null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
   // If we have an ID in the URL query params, fetch from API
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -26,7 +31,13 @@ export const OrderSuccess: React.FC = () => {
     }
   }, [dispatch, location.search, stateOrder]);
 
-  const order = stateOrder || currentOrder;
+  useEffect(() => {
+    if (!stateOrder && currentOrder) {
+      setLocalOrder(currentOrder);
+    }
+  }, [currentOrder, stateOrder]);
+
+  const order = localOrder || stateOrder || currentOrder;
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -37,6 +48,25 @@ export const OrderSuccess: React.FC = () => {
     const d = new Date(createdAt);
     d.setDate(d.getDate() + 5);
     return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  const handleCancelOrder = async () => {
+    if (!order) return;
+    setIsCancelling(true);
+    const result = await dispatch(cancelOrderAsync(order._id));
+    setIsCancelling(false);
+    setConfirmCancel(false);
+    if (cancelOrderAsync.fulfilled.match(result)) {
+      notifySuccess('Order cancelled successfully.');
+      setLocalOrder(result.payload);
+    } else {
+      notifyError((result.payload as string) || 'Failed to cancel order.');
+    }
+  };
+
+  const canCancel = (ord: Order | null) => {
+    if (!ord) return false;
+    return !['Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(ord.orderStatus);
   };
 
   const shortId = order ? '#' + order._id.slice(-8).toUpperCase() : '';
@@ -67,6 +97,18 @@ export const OrderSuccess: React.FC = () => {
               <span className="text-gray-400">Order ID</span>
               <span className="font-bold text-gray-900 dark:text-white font-mono">{shortId}</span>
             </div>
+            <div className="flex justify-between border-b border-gray-50 dark:border-gray-800/40 pb-2">
+              <span className="text-gray-400">Order Status</span>
+              <span className={`font-bold ${order.orderStatus === 'Cancelled' ? 'text-red-500' : 'text-primary-600 dark:text-primary-400'}`}>
+                {order.orderStatus}
+              </span>
+            </div>
+            {order.cancellationReason && (
+              <div className="flex justify-between border-b border-gray-50 dark:border-gray-800/40 pb-2">
+                <span className="text-gray-400">Cancellation Reason</span>
+                <span className="font-bold text-red-600 dark:text-red-400">{order.cancellationReason}</span>
+              </div>
+            )}
             <div className="flex justify-between border-b border-gray-50 dark:border-gray-800/40 pb-2">
               <span className="text-gray-400">Order Date</span>
               <span className="font-bold text-gray-900 dark:text-white">{formatDate(order.createdAt)}</span>
@@ -134,6 +176,43 @@ export const OrderSuccess: React.FC = () => {
       )}
 
       <div className="flex flex-col gap-3 pt-4">
+        {order && canCancel(order) && (
+          <>
+            {confirmCancel ? (
+              <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-xl p-3 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-red-700 dark:text-red-400">Cancel this order?</span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmCancel(false)}
+                  >
+                    No
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleCancelOrder}
+                    disabled={isCancelling}
+                    className="!bg-red-600 hover:!bg-red-700 border-red-600 text-white font-bold"
+                  >
+                    {isCancelling ? 'Cancelling...' : 'Yes, Cancel'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                fullWidth
+                variant="outline"
+                onClick={() => setConfirmCancel(true)}
+                leftIcon={<FiXCircle className="h-4 w-4 text-red-500" />}
+                className="!border-red-200 !text-red-600 hover:!bg-red-50 dark:!border-red-900 dark:!text-red-400 font-bold"
+              >
+                Cancel Order
+              </Button>
+            )}
+          </>
+        )}
+
         <Button
           fullWidth
           onClick={() => navigate('/orders')}
