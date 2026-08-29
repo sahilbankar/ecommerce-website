@@ -41,7 +41,7 @@ app.use(helmet());
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://ecommerce-website-62pshyt5h-ecommerce-7cd8.vercel.app'
+  'https://ecommerce-website-three-plum-33.vercel.app'
 ];
 
 app.use(cors({
