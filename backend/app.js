@@ -43,20 +43,10 @@ const allowedOrigins = [
   'http://localhost:3000',
   'https://ecommerce-website-three-plum-33.vercel.app'
 ];
-
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  origin: allowedOrigins,
+  credentials: true
 }));
-
 // General Rate Limiter
 app.use('/api', apiLimiter);
 
