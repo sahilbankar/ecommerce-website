@@ -1,8 +1,24 @@
 const cloudinary = require('../config/cloudinary');
 const ApiError = require('../utils/ApiError');
+const fs = require('fs');
+const path = require('path');
+
+const saveLocalFileBuffer = (buffer) => {
+  const uploadsDir = path.join(__dirname, '../uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.jpg`;
+  const filePath = path.join(uploadsDir, filename);
+  fs.writeFileSync(filePath, buffer);
+  return {
+    url: `/uploads/${filename}`,
+    public_id: filename
+  };
+};
 
 /**
- * Upload a single file buffer to Cloudinary
+ * Upload a single file buffer to Cloudinary (with local fallback)
  * @param {Buffer} buffer       - File buffer from multer memoryStorage
  * @param {string} folder       - Cloudinary destination folder
  * @param {Object} [options]    - Additional Cloudinary upload options
@@ -10,6 +26,10 @@ const ApiError = require('../utils/ApiError');
  */
 const uploadToCloudinary = (buffer, folder = 'ecommerce', options = {}) => {
   return new Promise((resolve, reject) => {
+    if (!process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME === 'your_cloud_name') {
+      return resolve(saveLocalFileBuffer(buffer));
+    }
+
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder,
@@ -19,7 +39,11 @@ const uploadToCloudinary = (buffer, folder = 'ecommerce', options = {}) => {
       },
       (error, result) => {
         if (error) {
-          reject(new ApiError(500, `Cloudinary upload failed: ${error.message}`));
+          try {
+            resolve(saveLocalFileBuffer(buffer));
+          } catch {
+            reject(new ApiError(500, `Upload failed: ${error.message}`));
+          }
         } else {
           resolve({
             url: result.secure_url,
@@ -52,8 +76,12 @@ const deleteFromCloudinary = async (public_id) => {
   if (!public_id || public_id.trim() === '') {
     return { result: 'skipped - no public_id' };
   }
-  const result = await cloudinary.uploader.destroy(public_id);
-  return result;
+  try {
+    const result = await cloudinary.uploader.destroy(public_id);
+    return result;
+  } catch {
+    return { result: 'error' };
+  }
 };
 
 /**

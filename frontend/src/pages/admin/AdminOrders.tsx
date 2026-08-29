@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../redux/store';
-import { fetchAllOrders, updateOrderStatus, Order } from '../../redux/slices/orderSlice';
+import { fetchAllOrders, updateOrderStatus, deleteOrderAsync, Order } from '../../redux/slices/orderSlice';
 import { notifySuccess, notifyError } from '../../components/Toast';
 import { formatCurrency } from '../../utils';
 import {
   FiSearch, FiEye, FiEdit2, FiChevronLeft, FiChevronRight,
-  FiRefreshCw, FiAlertCircle, FiX
+  FiRefreshCw, FiAlertCircle, FiX, FiTrash2
 } from 'react-icons/fi';
 
 const statusColors: Record<string, string> = {
@@ -87,6 +87,17 @@ export const AdminOrders: React.FC = () => {
       dispatch(fetchAllOrders({ page, limit: LIMIT, status: statusFilter }));
     } else {
       notifyError((result.payload as string) || 'Failed to update status');
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!window.confirm('Are you sure you want to delete this order?')) return;
+    const result = await dispatch(deleteOrderAsync(orderId));
+    if (deleteOrderAsync.fulfilled.match(result)) {
+      notifySuccess('Order deleted successfully');
+      dispatch(fetchAllOrders({ page, limit: LIMIT, status: statusFilter }));
+    } else {
+      notifyError((result.payload as string) || 'Failed to delete order');
     }
   };
 
@@ -225,6 +236,13 @@ export const AdminOrders: React.FC = () => {
                             title="Update Status"
                           >
                             <FiEdit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteOrder(order._id)}
+                            className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                            title="Delete Order"
+                          >
+                            <FiTrash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </td>

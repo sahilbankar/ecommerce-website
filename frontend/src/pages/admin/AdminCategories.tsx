@@ -240,6 +240,7 @@ export const AdminCategories: React.FC = () => {
             )}
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800/60 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-800">
@@ -299,6 +300,7 @@ export const AdminCategories: React.FC = () => {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

@@ -47,6 +47,11 @@ const autoProgressOrder = async (order) => {
     if (targetStatus === 'Delivered') {
       order.isDelivered = true;
       order.deliveredAt = Date.now();
+      
+      if (order.paymentMethod === 'COD' && !order.isPaid) {
+        order.isPaid = true;
+        order.paidAt = Date.now();
+      }
     }
     await order.save();
   }
@@ -115,6 +120,9 @@ const createOrder = asyncHandler(async (req, res, next) => {
     await coupon.save();
   }
 
+  const isPaid = paymentMethod !== 'COD';
+  const paidAt = isPaid ? Date.now() : undefined;
+
   const order = await Order.create({
     user: req.user._id,
     orderItems: validatedItems,
@@ -123,7 +131,9 @@ const createOrder = asyncHandler(async (req, res, next) => {
     itemsPrice,
     taxPrice,
     shippingPrice,
-    totalPrice: finalTotal
+    totalPrice: finalTotal,
+    isPaid,
+    paidAt
   });
 
   // Decrement stock for each product

@@ -1,4 +1,4 @@
-const dotenv = require('dotenv');
+﻿const dotenv = require('dotenv');
 
 // Load environment variables before any other imports
 dotenv.config();
@@ -44,3 +44,4 @@ process.on('unhandledRejection', (err) => {
     process.exit(1);
   }
 });
+

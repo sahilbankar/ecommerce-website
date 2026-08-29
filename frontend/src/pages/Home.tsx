@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+// import { motion } from 'framer-motion';
 import { FiArrowRight, FiShield, FiTruck, FiRefreshCw, FiHeadphones } from 'react-icons/fi';
-import { MOCK_CATEGORIES } from '../constants/dummyData';
+import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '../constants/dummyData';
 import { BackendProduct, Product } from '../types';
 import ProductCard from '../components/ProductCard';
 import CategoryCard from '../components/CategoryCard';
@@ -10,7 +10,7 @@ import Button from '../components/Button';
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from '../redux/store';
 import { addToCartAsync } from '../redux/slices/cartSlice';
-import { notifySuccess, notifyError } from '../components/Toast';
+import { notifySuccess } from '../components/Toast';
 import { api } from '../services/api';
 
 // Map backend product to frontend Product type
@@ -50,24 +50,76 @@ export const Home: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [newProducts, setNewProducts] = useState<Product[]>([]);
+  // @ts-ignore
+  const [activeCoupons, setActiveCoupons] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const directionRef = useRef<number>(1);
+  const [isHovered, setIsHovered] = useState(false);
+  
+  useEffect(() => {
+    if (isHovered) return;
+    
+    const step = 1;
+    const interval = setInterval(() => {
+      if (scrollRef.current) {
+        const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+        if (directionRef.current === 1 && scrollLeft + clientWidth >= scrollWidth - 1) {
+          directionRef.current = -1;
+        } else if (directionRef.current === -1 && scrollLeft <= 0) {
+          directionRef.current = 1;
+        }
+        scrollRef.current.scrollBy({ left: step * directionRef.current });
+      }
+    }, 20); // Smooth continuous scroll
+    return () => clearInterval(interval);
+  }, [isHovered]);
+
+  const heroImages = [
+    "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1516257984-b1b4d707412e?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1509631179647-0177331693ae?w=1600&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1550614000-4b95d4eb7e39?w=1600&auto=format&fit=crop&q=80"
+  ];
+
 
   useEffect(() => {
     const fetchHomeProducts = async () => {
       setIsLoading(true);
       try {
-        const [featuredRes, newestRes] = await Promise.all([
-          api.get('/products', { params: { isFeatured: 'true', limit: 4 } }),
-          api.get('/products', { params: { sort: 'newest', limit: 4 } }),
+        const [featuredRes, newestRes, couponsRes] = await Promise.all([
+          api.get('/products', { params: { isFeatured: 'true', limit: 12 } }),
+          api.get('/products', { params: { sort: 'newest', limit: 12 } }),
+          api.get('/coupons/active').catch(() => ({ data: { data: { coupons: [] } } }))
         ]);
 
         const featuredRaw: BackendProduct[] = featuredRes.data?.data?.products || [];
         const newestRaw: BackendProduct[] = newestRes.data?.data?.products || [];
 
-        setFeaturedProducts(featuredRaw.map(mapBackendProduct));
-        setNewProducts(newestRaw.map(mapBackendProduct));
+        let featuredMapped = featuredRaw.map(mapBackendProduct);
+        let newestMapped = newestRaw.map(mapBackendProduct);
+
+        if (featuredMapped.length === 0 && newestMapped.length > 0) {
+          featuredMapped = newestMapped;
+        }
+
+        if (featuredMapped.length === 0 && newestMapped.length === 0) {
+          featuredMapped = MOCK_PRODUCTS.filter((p) => p.isFeatured);
+          newestMapped = MOCK_PRODUCTS;
+        }
+
+        setFeaturedProducts(featuredMapped);
+        setNewProducts(newestMapped);
+        setActiveCoupons(couponsRes.data?.data?.coupons || []);
       } catch {
-        notifyError('Failed to load products.');
+        setFeaturedProducts(MOCK_PRODUCTS.filter((p) => p.isFeatured));
+        setNewProducts(MOCK_PRODUCTS);
       } finally {
         setIsLoading(false);
       }
@@ -90,62 +142,98 @@ export const Home: React.FC = () => {
   return (
     <div className="space-y-16 pb-16">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-700 to-indigo-800 text-white py-20 lg:py-32 dark:from-primary-950 dark:via-indigo-950 dark:to-gray-950">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.1),transparent)]" />
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="space-y-6 text-center lg:text-left"
-          >
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
-              ✨ New Collection 2026
-            </span>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-none">
-              Modern Living, <br />
-              <span className="bg-gradient-to-r from-primary-200 to-white bg-clip-text text-transparent">
-                Elevated Design
-              </span>
-            </h1>
-            <p className="text-base sm:text-lg text-primary-100 max-w-xl mx-auto lg:mx-0">
-              Upgrade your routine with handpicked smart accessories, luxury essentials, and home decor items.
-            </p>
-            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4">
-              <Button
-                variant="primary"
-                size="lg"
-                onClick={() => navigate('/shop')}
-                rightIcon={<FiArrowRight />}
-                className="bg-white text-primary-700 hover:bg-primary-50 focus:ring-white dark:bg-white dark:text-primary-900"
-              >
-                Shop The Sale
-              </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={() => navigate('/shop?sort=newest')}
-                className="border-white text-white hover:bg-white/10"
-              >
-                Browse New
-              </Button>
-            </div>
-          </motion.div>
+      <section 
+        className="relative overflow-hidden w-full h-[60vh] min-h-[450px] lg:h-[650px] text-white"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Full-width Slider Container */}
+        <div 
+          ref={scrollRef}
+          className="absolute inset-0 flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+          style={{ scrollBehavior: 'smooth', msOverflowStyle: 'none', scrollbarWidth: 'none' }}
+        >
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="relative flex items-center justify-center"
-          >
-            <div className="absolute inset-0 bg-white/5 rounded-full blur-3xl" />
-            <img
-              src="https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&auto=format&fit=crop&q=80"
-              alt="Feature headphones"
-              className="relative w-full max-w-md object-contain rounded-3xl shadow-2xl hover:scale-102 transition-transform duration-300"
-            />
-          </motion.div>
+          {heroImages.map((src, i) => (
+            <div key={i} className="flex-none w-full h-full snap-center relative">
+              <img
+                src={src}
+                alt={`Slide ${i+1}`}
+                className="w-full h-full object-cover"
+              />
+              {/* Overlay gradient for better text readability */}
+
+              {/* Text and Buttons Overlay on EACH image slide */}
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-4 pointer-events-none">
+                <div className="space-y-6 max-w-3xl mx-auto pointer-events-auto">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
+                    ✨ New Collection 2026
+                  </span>
+                  <h1 className="text-4xl sm:text-5xl lg:text-7xl font-extrabold tracking-tight leading-tight drop-shadow-lg">
+                    Modern Living, <br />
+                    <span className="text-white">
+                      Elevated Design
+                    </span>
+                  </h1>
+                                    <p className="text-base sm:text-xl text-gray-200 drop-shadow-md">
+                    Upgrade your routine with handpicked smart accessories, luxury essentials, and home decor items.
+                  </p>
+                  
+                  {activeCoupons.length > 0 && (
+                    <div className="mt-4 mx-auto inline-flex items-center gap-4 bg-white/10 backdrop-blur-xl border border-white/30 rounded-2xl p-3 px-6 shadow-2xl pointer-events-auto">
+                      <div className="flex flex-col text-left">
+                        <span className="text-xs text-white/80 uppercase font-semibold">Limited Time Offer</span>
+                        <span className="text-xl font-bold text-white drop-shadow-md">
+                          {activeCoupons[0].discountType === 'percentage' ? `${activeCoupons[0].discountAmount}% OFF` : activeCoupons[0].discountType === 'fixed' ? `₹${activeCoupons[0].discountAmount} OFF` : 'FREE SHIPPING'}
+                        </span>
+                      </div>
+                      <div className="h-8 w-px bg-white/30 mx-2" />
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-mono font-black tracking-wider text-violet-300 drop-shadow-md">{activeCoupons[0].code}</span>
+                        <button 
+                          onClick={() => { navigator.clipboard.writeText(activeCoupons[0].code); notifySuccess('Code copied to clipboard!'); }}
+                          className="p-2 bg-white text-violet-600 hover:bg-gray-100 rounded-lg transition-colors active:scale-95 shadow-md"
+                          title="Copy code"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      onClick={() => navigate('/shop')}
+                      rightIcon={<FiArrowRight />}
+                      className="bg-white text-gray-900 hover:bg-gray-100 shadow-xl"
+                    >
+                      Shop The Sale
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      onClick={() => navigate('/shop?sort=newest')}
+                      className="border-white text-white hover:bg-white/20 backdrop-blur-sm shadow-xl"
+                    >
+                      Browse New
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="absolute inset-0 bg-black/40 dark:bg-black/60" />
+            </div>
+          ))}
         </div>
+
+        <style>
+          {`
+            .scrollbar-hide::-webkit-scrollbar {
+                display: none;
+            }
+          `}
+        </style>
       </section>
 
       {/* Feature Badges Section */}
@@ -216,7 +304,7 @@ export const Home: React.FC = () => {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
           {isLoading
-            ? Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)
+            ? Array.from({ length: 12 }).map((_, i) => <ProductSkeleton key={i} />)
             : featuredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -238,7 +326,7 @@ export const Home: React.FC = () => {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
           {isLoading
-            ? Array.from({ length: 4 }).map((_, i) => <ProductSkeleton key={i} />)
+            ? Array.from({ length: 12 }).map((_, i) => <ProductSkeleton key={i} />)
             : newProducts.map((product) => (
                 <ProductCard
                   key={product.id}

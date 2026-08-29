@@ -62,10 +62,21 @@ const uploadProductImages = asyncHandler(async (req, res, next) => {
     return next(new ApiError(404, 'Product not found'));
   }
 
+  let variants = req.body.variants || [];
+  if (typeof variants === 'string') {
+    variants = [variants];
+  }
+
   const uploadedImages = await uploadMultipleToCloudinary(req.files, 'ecommerce/products');
 
+  const formattedImages = uploadedImages.map((img, index) => ({
+    url: img.url,
+    public_id: img.public_id || '',
+    variant: Array.isArray(variants) ? (variants[index] || '') : ''
+  }));
+
   // Append uploaded images to product's images array
-  product.images.push(...uploadedImages);
+  product.images.push(...formattedImages);
   await product.save();
 
   res.status(200).json(

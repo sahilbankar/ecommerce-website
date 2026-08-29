@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Order = require('../models/orderModel');
 const Product = require('../models/productModel');
 const User = require('../models/userModel');
@@ -14,13 +15,19 @@ const getDashboardStats = asyncHandler(async (req, res) => {
     totalProducts,
     totalOrders,
     pendingOrders,
-    totalReviews
+    deliveredOrders,
+    cancelledOrders,
+    totalReviews,
+    totalCoupons
   ] = await Promise.all([
     User.countDocuments({ role: 'customer' }),
     Product.countDocuments({ isActive: true }),
     Order.countDocuments(),
     Order.countDocuments({ orderStatus: 'Pending' }),
-    Review.countDocuments({ status: 'approved' })
+    Order.countDocuments({ orderStatus: 'Delivered' }),
+    Order.countDocuments({ orderStatus: 'Cancelled' }),
+    Review.countDocuments(),
+    mongoose.model('Coupon').countDocuments()
   ]);
 
   // Revenue: sum of all paid orders
@@ -76,7 +83,10 @@ const getDashboardStats = asyncHandler(async (req, res) => {
         totalProducts,
         totalOrders,
         pendingOrders,
+        deliveredOrders,
+        cancelledOrders,
         totalReviews,
+        totalCoupons,
         totalRevenue
       },
       monthlyRevenue,

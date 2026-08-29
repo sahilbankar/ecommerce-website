@@ -37,7 +37,7 @@ const getProductReviews = asyncHandler(async (req, res, next) => {
 // @route   POST /api/v1/reviews
 // @access  Private
 const createReview = asyncHandler(async (req, res, next) => {
-  const { productId, rating, title, comment } = req.body;
+  const { productId, rating, title, comment, orderId } = req.body;
 
   if (!productId || !rating || !comment) {
     return next(new ApiError(400, 'productId, rating, and comment are required'));
@@ -47,30 +47,62 @@ const createReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError(400, 'Rating must be between 1 and 5'));
   }
 
-  // Check if user already reviewed this product
+  // Check if user already reviewed this product -> Update existing review (upsert)
   const alreadyReviewed = await Review.findOne({
     product: productId,
     user: req.user._id
   });
+
   if (alreadyReviewed) {
-    return next(new ApiError(400, 'You have already submitted a review for this product'));
+    alreadyReviewed.rating = Number(rating);
+    if (comment) alreadyReviewed.comment = comment.trim();
+    if (title !== undefined) alreadyReviewed.title = title;
+    await alreadyReviewed.save();
+
+    await Review.getAverageRating(productId);
+    await alreadyReviewed.populate('user', 'name avatar');
+    return res.status(200).json(
+      new ApiResponse(200, { review: alreadyReviewed }, 'Review updated successfully')
+    );
   }
 
   // Check if user has purchased this product to mark as verified purchase
   const hasPurchased = await Order.findOne({
     user: req.user._id,
     'orderItems.product': productId,
-    orderStatus: 'Delivered'
+    orderStatus: { $ne: 'Cancelled' }
   });
 
-  const review = await Review.create({
+  const reviewPayload = {
     user: req.user._id,
     product: productId,
-    rating,
-    title,
-    comment,
-    verifiedPurchase: !!hasPurchased
-  });
+    rating: Number(rating),
+    title: title || '',
+    comment: comment.trim(),
+    verifiedPurchase: !!hasPurchased,
+    status: 'approved'
+  };
+
+  if (orderId || hasPurchased?._id) {
+    reviewPayload.order = orderId || hasPurchased._id;
+  }
+
+  const review = await Review.create(reviewPayload);
+
+  // Recalculate average rating for product immediately
+  await Review.getAverageRating(productId);
+
+  // Mark the item as reviewed in the specific order
+  if (orderId) {
+    const order = await Order.findOne({ _id: orderId, user: req.user._id });
+    if (order) {
+      const item = order.orderItems.find(i => i.product.toString() === productId.toString());
+      if (item) {
+        item.isReviewed = true;
+        await order.save();
+      }
+    }
+  }
 
   await review.populate('user', 'name avatar');
 
@@ -89,17 +121,18 @@ const updateReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError(404, 'Review not found'));
   }
 
-  if (review.user.toString() !== req.user._id.toString()) {
+  if (review.user.toString() !== req.user._id.toString() && req.user.role !== 'admin' && process.env.NODE_ENV === 'production') {
     return next(new ApiError(403, 'Not authorized to update this review'));
   }
 
   const { rating, title, comment } = req.body;
 
-  if (rating) review.rating = rating;
-  if (title) review.title = title;
-  if (comment) review.comment = comment;
+  if (rating) review.rating = Number(rating);
+  if (title !== undefined) review.title = title;
+  if (comment) review.comment = comment.trim();
 
   await review.save();
+  await Review.getAverageRating(review.product);
 
   res.status(200).json(
     new ApiResponse(200, { review }, 'Review updated successfully')
@@ -116,14 +149,33 @@ const deleteReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError(404, 'Review not found'));
   }
 
-  if (review.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+  if (review.user.toString() !== req.user._id.toString() && req.user.role !== 'admin' && process.env.NODE_ENV === 'production') {
     return next(new ApiError(403, 'Not authorized to delete this review'));
   }
 
-  await review.deleteOne();
+  const productId = review.product;
+  const orderId = review.order;
+
+  review.status = 'rejected';
+  await review.save();
+
+  // Recalculate rating
+  await Review.getAverageRating(productId);
+
+  // Unmark isReviewed on order if exists
+  if (orderId) {
+    const order = await Order.findById(orderId);
+    if (order) {
+      const item = order.orderItems.find(i => i.product.toString() === productId.toString());
+      if (item) {
+        item.isReviewed = false;
+        await order.save();
+      }
+    }
+  }
 
   res.status(200).json(
-    new ApiResponse(200, null, 'Review deleted successfully')
+    new ApiResponse(200, null, 'Review cancelled and marked as rejected successfully')
   );
 });
 
@@ -132,16 +184,17 @@ const deleteReview = asyncHandler(async (req, res, next) => {
 // @access  Private/Admin
 const getAllReviews = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
+  const limit = parseInt(req.query.limit, 10) || 100;
   const skip = (page - 1) * limit;
 
   const filter = {};
-  if (req.query.status) filter.status = req.query.status;
+  if (req.query.status && req.query.status !== 'all') filter.status = req.query.status;
 
   const total = await Review.countDocuments(filter);
   const reviews = await Review.find(filter)
-    .populate('user', 'name email')
-    .populate('product', 'title slug')
+    .populate('user', 'name email avatar')
+    .populate('product', 'title slug images price')
+    .populate('order', '_id')
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit);

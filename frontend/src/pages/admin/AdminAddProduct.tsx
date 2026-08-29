@@ -9,6 +9,7 @@ import {
   FiTrash2,
   FiCheckCircle,
   FiTag,
+  FiStar,
 } from 'react-icons/fi';
 import axios from 'axios';
 import { api } from '../../services/api';
@@ -57,6 +58,7 @@ export const AdminAddProduct: React.FC = () => {
   const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
   const [isFeatured, setIsFeatured] = useState(false);
+  const [rating, setRating] = useState<number>(4.5);
   const [specs, setSpecs] = useState<ProductSpec[]>([
     { key: 'Material', value: '' },
   ]);
@@ -271,6 +273,7 @@ export const AdminAddProduct: React.FC = () => {
         category,
         brand,
         isFeatured,
+        ratings: { average: rating, numReviews: 0 },
         specs: validSpecs,
         sizes,
         colors: [],
@@ -627,10 +630,10 @@ export const AdminAddProduct: React.FC = () => {
 
           {/* Right Column (Organization & Submit) */}
           <div className="space-y-5">
-            {/* Featured Checkbox */}
-            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm space-y-3">
+            {/* Visibility & Rating */}
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm space-y-4">
               <h3 className="font-bold text-gray-900 dark:text-white text-sm uppercase tracking-wider">
-                Visibility
+                Visibility & Rating
               </h3>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
@@ -643,9 +646,46 @@ export const AdminAddProduct: React.FC = () => {
                   Featured Product
                 </span>
               </label>
-              <p className="text-xs text-gray-500">
-                Featured products are highlighted on the storefront homepage and recommended sections.
-              </p>
+
+              <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Product Rating (1.0 - 5.0)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="0.1"
+                    value={rating}
+                    onChange={(e) => setRating(Math.min(5, Math.max(1, Number(e.target.value))))}
+                    className="w-24 px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 font-bold"
+                  />
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setRating(i + 1)}
+                        className="focus:outline-none transition-transform hover:scale-110"
+                      >
+                        <FiStar
+                          className={`h-5 w-5 ${
+                            i < Math.floor(rating)
+                              ? 'text-amber-400 fill-amber-400'
+                              : i < rating
+                              ? 'text-amber-400 fill-amber-200'
+                              : 'text-gray-300 dark:text-gray-600'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    <span className="ml-1 text-xs font-bold text-gray-700 dark:text-gray-300">
+                      ({rating.toFixed(1)})
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Category & Brand (Loaded from MongoDB) */}

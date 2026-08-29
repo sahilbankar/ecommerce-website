@@ -13,6 +13,7 @@ import {
 import { formatCurrency } from '../utils';
 import Button from '../components/Button';
 import { notifySuccess, notifyError } from '../components/Toast';
+import { api } from '../services/api';
 import Breadcrumb from '../components/Breadcrumb';
 import EmptyState from '../components/EmptyState';
 
@@ -25,7 +26,8 @@ export const Cart: React.FC = () => {
   );
 
   const [couponCode, setCouponCode] = useState('');
-  const [discountPercent, setDiscountPercent] = useState(0);
+  // @ts-ignore
+  const [appliedCoupon, setAppliedCoupon] = useState<{code: string, discountType: string, discountAmount: number, calculatedDiscount: number} | null>(null);
 
   // Fetch real cart on mount
   useEffect(() => {
@@ -65,7 +67,7 @@ export const Cart: React.FC = () => {
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
     if (couponCode.trim().toUpperCase() === 'PROMO20') {
-      setDiscountPercent(20);
+      setAppliedCoupon({code: 'PROMO20', discountType: 'percentage', discountAmount: 20, calculatedDiscount: 0});
       notifySuccess('Coupon code PROMO20 applied! You received a 20% discount.');
     } else {
       notifyError('Invalid coupon code. Try entering "PROMO20".');
@@ -73,7 +75,7 @@ export const Cart: React.FC = () => {
   };
 
   const subtotal = totalAmount;
-  const discountAmount = subtotal * (discountPercent / 100);
+  const discountAmount = appliedCoupon ? (appliedCoupon.discountType === 'percentage' ? subtotal * (appliedCoupon.discountAmount / 100) : appliedCoupon.discountAmount) : 0;
   const shippingFee = subtotal > 150 || subtotal === 0 ? 0 : 15.0;
   const taxAmount = (subtotal - discountAmount) * 0.08;
   const grandTotal = Math.max(0, subtotal - discountAmount + shippingFee + taxAmount);
@@ -125,7 +127,10 @@ export const Cart: React.FC = () => {
                   key={item.id}
                   className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-5 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors"
                 >
-                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-50 border border-gray-100 dark:border-gray-800">
+                  <Link
+                    to={item.slug ? `/product/${item.slug}` : `/product/${item.productId}`}
+                    className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-50 border border-gray-100 dark:border-gray-800 block"
+                  >
                     <img
                       src={item.image}
                       alt={item.title}
@@ -135,15 +140,14 @@ export const Cart: React.FC = () => {
                           'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80';
                       }}
                     />
-                  </div>
+                  </Link>
 
                   <div className="flex-1 space-y-1">
-                    <Link
-                      to={item.slug ? `/product/${item.slug}` : `/product/${item.productId}`}
-                      className="font-bold text-sm text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400 line-clamp-1"
+                    <div
+                      className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1"
                     >
                       {item.title}
-                    </Link>
+                    </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
                       <span>
                         Color: <strong>{item.color || 'Standard'}</strong>
@@ -217,9 +221,9 @@ export const Cart: React.FC = () => {
                   {formatCurrency(subtotal)}
                 </span>
               </div>
-              {discountPercent > 0 && (
+              {appliedCoupon && (
                 <div className="flex justify-between text-emerald-600">
-                  <span>Discount ({discountPercent}%)</span>
+                  <span>Discount ({appliedCoupon.discountType === 'percentage' ? `${appliedCoupon.discountAmount}%` : `₹${appliedCoupon.discountAmount}`})</span>
                   <span>-{formatCurrency(discountAmount)}</span>
                 </div>
               )}
@@ -261,7 +265,7 @@ export const Cart: React.FC = () => {
             <Button
               fullWidth
               size="lg"
-              onClick={() => navigate('/checkout')}
+              onClick={() => navigate('/checkout', { state: { couponCode: appliedCoupon?.code, discountType: appliedCoupon?.discountType, discountAmount: appliedCoupon?.discountAmount } })}
               rightIcon={<FiArrowRight />}
             >
               Checkout

@@ -111,7 +111,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       className={`group relative flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-gray-800 dark:bg-gray-900 ${className}`}
     >
       {/* Image Container */}
-      <div className="relative aspect-square w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
+      <Link
+        to={`/product/${slug || id}`}
+        className="relative aspect-square w-full overflow-hidden bg-gray-100 dark:bg-gray-800 block"
+      >
         <img
           src={mainImage}
           alt={title}
@@ -157,7 +160,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {onQuickView && (
             <button
               type="button"
-              onClick={() => onQuickView(product)}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onQuickView(product); }}
               aria-label="Quick View"
               className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-700 shadow-md backdrop-blur-sm transition-transform hover:scale-110 hover:bg-white hover:text-primary-600 dark:bg-gray-800/90 dark:text-gray-200 dark:hover:bg-gray-800"
             >
@@ -165,7 +168,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </button>
           )}
         </div>
-      </div>
+      </Link>
 
       {/* Details Container */}
       <div className="flex flex-1 flex-col justify-between p-4">
@@ -176,12 +179,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </div>
 
           {/* Title */}
-          <Link
-            to={`/product/${slug || id}`}
-            className="line-clamp-2 text-sm font-semibold text-gray-900 transition-colors hover:text-primary-600 dark:text-gray-100 dark:hover:text-primary-400"
+          <div
+            className="line-clamp-2 text-sm font-semibold text-gray-900 transition-colors dark:text-gray-100"
           >
             {title}
-          </Link>
+          </div>
 
           {/* Rating */}
           <div className="mt-2 flex items-center gap-1">

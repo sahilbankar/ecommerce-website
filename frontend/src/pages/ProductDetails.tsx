@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FiHeart, FiShoppingCart, FiMinus, FiPlus, FiStar } from 'react-icons/fi';
+import { FiHeart, FiShoppingCart, FiMinus, FiPlus, FiStar, FiTrash2, FiEdit2 } from 'react-icons/fi';
 import { FaHeart } from 'react-icons/fa';
 import { BackendProduct, Product, ProductSpec } from '../types';
 import { formatCurrency } from '../utils';
@@ -53,6 +53,7 @@ export const ProductDetails: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const wishlistItems = useSelector((state: RootState) => state.wishlist?.items || []);
+  const currentUser = useSelector((state: RootState) => state.auth?.user);
 
   const [product, setProduct] = useState<BackendProduct | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
@@ -70,8 +71,9 @@ export const ProductDetails: React.FC = () => {
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
   const [activeTab, setActiveTab] = useState<'details' | 'reviews'>('details');
-  const [newReviewComment, setNewReviewComment] = useState('');
+  const [reviews, setReviews] = useState<any[]>([]);
   const [newReviewRating, setNewReviewRating] = useState(5);
+  const [newReviewComment, setNewReviewComment] = useState('');
 
   // Derived: active variant info (price/stock) for selected size
   const activeVariant = product?.variants?.find(
@@ -98,6 +100,13 @@ export const ProductDetails: React.FC = () => {
         if (!prod) throw new Error('Product not found');
 
         setProduct(prod);
+        
+        try {
+          const revRes = await api.get(`/reviews?productId=${prod._id}`);
+          setReviews(revRes.data?.data?.reviews || []);
+        } catch (e) {
+          console.error('Failed to load reviews', e);
+        }
 
         // Resolve image URLs with variant tags
         const urls: { url: string; variant: string }[] = (prod.images || []).map((img: unknown) => {
@@ -178,12 +187,59 @@ export const ProductDetails: React.FC = () => {
     }
   };
 
-  const handleReviewSubmit = (e: React.FormEvent) => {
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newReviewComment.trim()) {
-      notifySuccess('Review submitted successfully! Thank you for your feedback.');
+    if (!product) return;
+    if (!newReviewComment.trim()) {
+      notifyError('Please enter a review comment.');
+      return;
+    }
+    const prodId = product._id || product.id;
+    setIsSubmittingReview(true);
+    try {
+      await api.post('/reviews', {
+        productId: prodId,
+        rating: newReviewRating,
+        comment: newReviewComment.trim(),
+      });
+      notifySuccess('Review submitted successfully!');
       setNewReviewComment('');
       setNewReviewRating(5);
+
+      // Refresh product details & reviews
+      const [prodRes, revRes] = await Promise.all([
+        api.get(`/products/${prodId}`),
+        api.get(`/reviews?productId=${prodId}`),
+      ]);
+      if (prodRes.data?.data?.product) {
+        setProduct(prodRes.data.data.product);
+      }
+      setReviews(revRes.data?.data?.reviews || []);
+    } catch (err: any) {
+      notifyError(err.response?.data?.message || 'Failed to submit review');
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    if (!window.confirm('Are you sure you want to delete this review?')) return;
+    try {
+      await api.delete(`/reviews/${reviewId}`);
+      notifySuccess('Review deleted successfully!');
+      const prodId = product?._id || product?.id;
+      if (prodId) {
+        const [prodRes, revRes] = await Promise.all([
+          api.get(`/products/${prodId}`),
+          api.get(`/reviews?productId=${prodId}`),
+        ]);
+        if (prodRes.data?.data?.product) setProduct(prodRes.data.data.product);
+        setReviews(revRes.data?.data?.reviews || []);
+      }
+    } catch (err: any) {
+      notifyError(err.response?.data?.message || 'Failed to delete review');
     }
   };
 
@@ -473,56 +529,121 @@ export const ProductDetails: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-8 max-w-3xl">
-            {/* Submit Review */}
-            <form onSubmit={handleReviewSubmit} className="space-y-4 bg-gray-50 dark:bg-gray-900 p-6 rounded-2xl border border-gray-200 dark:border-gray-800">
-              <h4 className="font-bold text-sm text-gray-900 dark:text-white">Leave a Review</h4>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-gray-500">Your Rating:</span>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setNewReviewRating(star)}
-                      className="text-amber-400 hover:scale-110 transition-transform"
-                    >
-                      {newReviewRating >= star ? <FiStar className="fill-amber-400" /> : <FiStar />}
-                    </button>
-                  ))}
+            {/* Write a Review Form */}
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-6 space-y-4">
+              <h4 className="text-base font-bold text-gray-900 dark:text-white">Write a Customer Review</h4>
+              <form onSubmit={handleReviewSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                    Rating
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setNewReviewRating(star)}
+                        className="focus:outline-none transition-transform hover:scale-110"
+                      >
+                        <FiStar
+                          className={`h-6 w-6 ${
+                            star <= newReviewRating
+                              ? 'text-amber-400 fill-amber-400'
+                              : 'text-gray-300 dark:text-gray-600'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    <span className="ml-2 text-xs font-bold text-gray-700 dark:text-gray-300">
+                      {newReviewRating} / 5
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <textarea
-                value={newReviewComment}
-                onChange={(e) => setNewReviewComment(e.target.value)}
-                placeholder="Share your thoughts on the product features..."
-                rows={3}
-                required
-                className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-100 dark:placeholder-gray-500"
-              />
-              <Button type="submit" size="sm">
-                Submit Review
-              </Button>
-            </form>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                    Your Review / Comment
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={newReviewComment}
+                    onChange={(e) => setNewReviewComment(e.target.value)}
+                    placeholder="Write your experience with this product..."
+                    required
+                    className="w-full px-4 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 resize-none placeholder-gray-400"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={isSubmittingReview || !newReviewComment.trim()}
+                  className="w-full sm:w-auto"
+                >
+                  {isSubmittingReview ? 'Submitting...' : 'Submit Review'}
+                </Button>
+              </form>
+            </div>
 
             {/* List of Reviews */}
             <div className="space-y-4">
-              <div className="border-b border-gray-100 dark:border-gray-800 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-indigo-50 font-bold text-indigo-700 flex items-center justify-center text-xs">
-                    JD
-                  </div>
-                  <div>
-                    <h5 className="text-sm font-bold">John Doe</h5>
-                    <div className="flex items-center gap-1">
-                      <RatingComponent value={5} readOnly size="sm" />
-                      <span className="text-[10px] text-gray-400">2 days ago</span>
+              {reviews.length === 0 ? (
+                <p className="text-sm text-gray-500 italic">No reviews yet. Be the first to review this product after purchasing!</p>
+              ) : (
+                reviews.map((review: any) => {
+                  const isMyReview = currentUser && (
+                    review.user?._id === (currentUser as any)._id ||
+                    review.user?.id === (currentUser as any)._id ||
+                    review.user === (currentUser as any)._id
+                  );
+
+                  return (
+                    <div key={review._id} className="border-b border-gray-100 dark:border-gray-800 pb-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-indigo-50 font-bold text-indigo-700 flex items-center justify-center text-xs uppercase">
+                            {review.user?.name ? review.user.name.substring(0, 2) : 'AN'}
+                          </div>
+                          <div>
+                            <h5 className="text-sm font-bold text-gray-900 dark:text-white">{review.user?.name || 'Anonymous User'}</h5>
+                            <div className="flex items-center gap-1">
+                              <RatingComponent value={review.rating} readOnly size="sm" />
+                              <span className="text-[10px] text-gray-400">
+                                {new Date(review.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {isMyReview && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewReviewRating(review.rating);
+                                setNewReviewComment(review.comment);
+                                window.scrollTo({ top: 400, behavior: 'smooth' });
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/30 transition-colors"
+                              title="Edit Review"
+                            >
+                              <FiEdit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReview(review._id)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                              title="Delete / Cancel Review"
+                            >
+                              <FiTrash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-2.5 text-xs text-gray-600 dark:text-gray-400">
+                        {review.comment}
+                      </p>
                     </div>
-                  </div>
-                </div>
-                <p className="mt-2.5 text-xs text-gray-600 dark:text-gray-400">
-                  Absolutely amazing! The sound separation and active noise cancelling features exceeded my expectations. High build quality and fits comfortably over long periods.
-                </p>
-              </div>
+                  );
+                })
+              )}
             </div>
           </div>
         )}

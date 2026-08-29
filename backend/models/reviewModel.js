@@ -14,6 +14,10 @@ const reviewSchema = new mongoose.Schema(
       required: [true, 'Product reference is required'],
       index: true
     },
+    order: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Order'
+    },
     rating: {
       type: Number,
       required: [true, 'Rating is required'],
@@ -23,7 +27,8 @@ const reviewSchema = new mongoose.Schema(
     title: {
       type: String,
       trim: true,
-      maxlength: [100, 'Title cannot exceed 100 characters']
+      maxlength: [100, 'Title cannot exceed 100 characters'],
+      default: ''
     },
     comment: {
       type: String,
@@ -46,13 +51,14 @@ const reviewSchema = new mongoose.Schema(
   }
 );
 
-// Prevent duplicate reviews from same user on same product
-reviewSchema.index({ product: 1, user: 1 }, { unique: true });
+// Compound index on product and user
+reviewSchema.index({ product: 1, user: 1 });
 
 // Static Method: Calculate and update average rating on Product
 reviewSchema.statics.getAverageRating = async function (productId) {
+  const prodId = typeof productId === 'string' ? new mongoose.Types.ObjectId(productId) : productId;
   const stats = await this.aggregate([
-    { $match: { product: productId, status: 'approved' } },
+    { $match: { product: prodId, status: 'approved' } },
     {
       $group: {
         _id: '$product',

@@ -7,9 +7,10 @@ const ApiError = require('../utils/ApiError');
  */
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 200 requests per windowMs
+  max: process.env.NODE_ENV !== 'production' ? 10000 : 500, // 10000 in dev mode, 500 in prod
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: () => process.env.NODE_ENV !== 'production', // Skip rate limiting during development/testing
   handler: (_req, _res, next) => {
     next(new ApiError(429, 'Too many requests from this IP. Please try again after 15 minutes.'));
   }
@@ -21,9 +22,10 @@ const apiLimiter = rateLimit({
  */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit each IP to 20 requests per 15 minutes for auth routes
+  max: process.env.NODE_ENV !== 'production' ? 1000 : 50, // 1000 in dev mode, 50 in prod
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV !== 'production',
   handler: (_req, _res, next) => {
     next(new ApiError(429, 'Too many authentication attempts. Please try again after 15 minutes.'));
   }

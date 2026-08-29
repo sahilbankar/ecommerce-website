@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../redux/store';
 import { createOrder } from '../redux/slices/orderSlice';
@@ -19,9 +19,21 @@ export const Checkout: React.FC = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const { isCreating } = useSelector((state: RootState) => state.orders);
 
-  const tax = cartTotal * 0.08;
-  const shipping = cartTotal > 150 ? 0 : 15.0;
-  const total = cartTotal + tax + shipping;
+  const location = useLocation();
+  const coupon = location.state as { couponCode?: string, discountType?: string, discountAmount?: number } | undefined;
+
+  let discount = 0;
+  if (coupon?.couponCode && coupon.discountAmount) {
+    if (coupon.discountType === 'percentage') {
+      discount = cartTotal * (coupon.discountAmount / 100);
+    } else {
+      discount = coupon.discountAmount;
+    }
+  }
+
+  const tax = Math.max(0, (cartTotal - discount) * 0.08);
+  const shipping = cartTotal > 150 || cartTotal === 0 ? 0 : 15.0;
+  const total = Math.max(0, cartTotal - discount + tax + shipping);
 
   const [paymentType, setPaymentType] = useState<'Online' | 'COD'>('Online');
   const [onlineMethod, setOnlineMethod] = useState<'PhonePe' | 'GPay' | 'Paytm'>('PhonePe');
@@ -71,6 +83,7 @@ export const Checkout: React.FC = () => {
       taxPrice: parseFloat(tax.toFixed(2)),
       shippingPrice: shipping,
       totalPrice: parseFloat(total.toFixed(2)),
+      couponCode: coupon?.couponCode,
     };
 
     const result = await dispatch(createOrder(orderPayload));
@@ -345,6 +358,12 @@ export const Checkout: React.FC = () => {
                 <span>Items Subtotal</span>
                 <span>{formatCurrency(cartTotal)}</span>
               </div>
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-600">
+                  <span>Discount ({coupon?.couponCode})</span>
+                  <span>-{formatCurrency(discount)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span>Shipping Fee</span>
                 <span>{shipping === 0 ? 'Free' : formatCurrency(shipping)}</span>

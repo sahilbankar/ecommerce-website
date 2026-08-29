@@ -8,6 +8,7 @@ export interface OrderItem {
   price: number;
   quantity: number;
   variant?: { color?: string; size?: string };
+  isReviewed?: boolean;
 }
 
 export interface ShippingAddress {

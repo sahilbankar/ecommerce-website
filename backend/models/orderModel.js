@@ -124,6 +124,11 @@ orderSchema.methods.updateStatus = async function (status, tracking = '') {
   if (status === 'Delivered') {
     this.isDelivered = true;
     this.deliveredAt = Date.now();
+    
+    if (this.paymentMethod === 'COD' && !this.isPaid) {
+      this.isPaid = true;
+      this.paidAt = Date.now();
+    }
   }
 
   return await this.save();

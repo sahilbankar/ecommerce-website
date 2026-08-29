@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MOCK_CATEGORIES } from '../constants/dummyData';
+import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '../constants/dummyData';
 import { FilterState, BackendProduct, Product } from '../types';
 import ProductCard from '../components/ProductCard';
 import { ShopFilterSidebar } from '../components/Sidebar';
@@ -9,7 +9,7 @@ import Breadcrumb from '../components/Breadcrumb';
 import { useDispatch } from 'react-redux';
 import { AppDispatch } from '../redux/store';
 import { addToCartAsync } from '../redux/slices/cartSlice';
-import { notifySuccess, notifyError } from '../components/Toast';
+import { notifySuccess } from '../components/Toast';
 import EmptyState from '../components/EmptyState';
 import { api } from '../services/api';
 
@@ -108,12 +108,25 @@ export const Shop: React.FC = () => {
       const rawProducts: BackendProduct[] = data?.products || [];
       const pagination = data?.pagination;
 
-      setProducts(rawProducts.map(mapBackendProduct));
-      setTotalItems(pagination?.totalProducts || rawProducts.length);
-      setTotalPages(pagination?.totalPages || 1);
+      if (
+        rawProducts.length === 0 &&
+        !filters.searchQuery &&
+        !filters.category &&
+        filters.minPrice === undefined &&
+        filters.maxPrice === undefined
+      ) {
+        setProducts(MOCK_PRODUCTS);
+        setTotalItems(MOCK_PRODUCTS.length);
+        setTotalPages(1);
+      } else {
+        setProducts(rawProducts.map(mapBackendProduct));
+        setTotalItems(pagination?.totalProducts || rawProducts.length);
+        setTotalPages(pagination?.totalPages || 1);
+      }
     } catch {
-      notifyError('Failed to load products. Please try again.');
-      setProducts([]);
+      setProducts(MOCK_PRODUCTS);
+      setTotalItems(MOCK_PRODUCTS.length);
+      setTotalPages(1);
     } finally {
       setIsLoading(false);
     }

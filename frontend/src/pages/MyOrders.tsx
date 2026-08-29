@@ -4,6 +4,7 @@ import { RootState, AppDispatch } from '../redux/store';
 import { fetchMyOrders, cancelOrderAsync, deleteOrderAsync, Order } from '../redux/slices/orderSlice';
 import { formatCurrency } from '../utils';
 import Button from '../components/Button';
+import { api } from '../services/api';
 import { notifySuccess, notifyError } from '../components/Toast';
 import Breadcrumb from '../components/Breadcrumb';
 import {
@@ -112,6 +113,93 @@ export const MyOrders: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selectedOrderModal, setSelectedOrderModal] = useState<Order | null>(null);
+  const [reviewModal, setReviewModal] = useState<{ orderId: string; productId: string; title: string; image: string } | null>(null);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const user = useSelector((state: RootState) => state.auth?.user);
+  const [existingReviewId, setExistingReviewId] = useState<string | null>(null);
+  const [isDeletingReview, setIsDeletingReview] = useState(false);
+
+  // Check for existing review when reviewModal opens
+  useEffect(() => {
+    if (!reviewModal) {
+      setExistingReviewId(null);
+      setComment('');
+      setRating(5);
+      return;
+    }
+    const checkReview = async () => {
+      try {
+        const res = await api.get(`/reviews?productId=${reviewModal.productId}`);
+        const reviews = res.data?.data?.reviews || [];
+        const myRev = reviews.find((r: any) =>
+          r.user?._id === user?._id || r.user?.id === user?._id || r.user === user?._id
+        );
+        if (myRev) {
+          setExistingReviewId(myRev._id);
+          setRating(myRev.rating || 5);
+          setComment(myRev.comment || '');
+        } else {
+          setExistingReviewId(null);
+          setRating(5);
+          setComment('');
+        }
+      } catch {
+        setExistingReviewId(null);
+      }
+    };
+    checkReview();
+  }, [reviewModal, user]);
+
+  const handleSubmitReview = async () => {
+    if (!reviewModal || !rating || !comment.trim()) return;
+    setIsSubmittingReview(true);
+    try {
+      if (existingReviewId) {
+        await api.put(`/reviews/${existingReviewId}`, {
+          rating,
+          comment: comment.trim()
+        });
+        notifySuccess('Review updated successfully!');
+      } else {
+        await api.post('/reviews', {
+          orderId: reviewModal.orderId,
+          productId: reviewModal.productId,
+          rating,
+          comment: comment.trim()
+        });
+        notifySuccess('Review submitted successfully!');
+      }
+      setReviewModal(null);
+      setComment('');
+      setRating(5);
+      dispatch(fetchMyOrders());
+    } catch (err: any) {
+      notifyError(err.response?.data?.message || 'Failed to submit review');
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
+  const handleDeleteReview = async () => {
+    if (!existingReviewId) return;
+    if (!window.confirm('Are you sure you want to cancel and delete your review?')) return;
+    setIsDeletingReview(true);
+    try {
+      await api.delete(`/reviews/${existingReviewId}`);
+      notifySuccess('Review cancelled & removed successfully!');
+      setReviewModal(null);
+      setExistingReviewId(null);
+      setComment('');
+      setRating(5);
+      dispatch(fetchMyOrders());
+    } catch (err: any) {
+      notifyError(err.response?.data?.message || 'Failed to delete review');
+    } finally {
+      setIsDeletingReview(false);
+    }
+  };
 
   useEffect(() => {
     dispatch(fetchMyOrders());
@@ -124,7 +212,7 @@ export const MyOrders: React.FC = () => {
     setConfirmCancelId(null);
     if (cancelOrderAsync.fulfilled.match(result)) {
       notifySuccess('Order cancelled successfully. Stock has been restored.');
-      if (selectedOrderModal && selectedOrderModal._id === orderId) {
+      if (selectedOrderModal && selectedOrderModal?._id === orderId) {
         setSelectedOrderModal(result.payload);
       }
     } else {
@@ -227,6 +315,41 @@ export const MyOrders: React.FC = () => {
                   {order.orderStatus}
                 </span>
 
+                {/* Cancel Order Option */}
+                {canCancel(order) && (
+                  <>
+                    {confirmCancelId === order._id ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Are you sure?</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setConfirmCancelId(null)}
+                        >
+                          No
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleCancelOrder(order._id)}
+                          disabled={isCancelling && cancellingId === order._id}
+                          className="!bg-red-600 hover:!bg-red-700 border-red-600 text-white"
+                        >
+                          {isCancelling && cancellingId === order._id ? 'Cancelling...' : 'Yes, Cancel'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setConfirmCancelId(order._id)}
+                        leftIcon={<FiXCircle className="h-3.5 w-3.5 text-red-500" />}
+                        className="!border-red-200 !text-red-600 hover:!bg-red-50 dark:!border-red-900 dark:!text-red-400"
+                      >
+                        Cancel Order
+                      </Button>
+                    )}
+                  </>
+                )}
                 {/* Check Order Button */}
                 <Button
                   size="sm"
@@ -261,9 +384,11 @@ export const MyOrders: React.FC = () => {
                       </p>
                     </div>
                   </div>
-                  <span className="text-sm font-bold text-gray-900 dark:text-white">
-                    {formatCurrency(item.price * item.quantity)}
-                  </span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className="text-sm font-bold text-gray-900 dark:text-white">
+                      {formatCurrency(item.price * item.quantity)}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -281,6 +406,85 @@ export const MyOrders: React.FC = () => {
                 >
                   View Details ("Check Order")
                 </Button>
+
+                {order.orderStatus !== 'Cancelled' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!order.orderItems.every(i => i.isReviewed) ? (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const unreviewed = order.orderItems.find(i => !i.isReviewed) || order.orderItems[0];
+                          if (unreviewed) {
+                            setReviewModal({
+                              orderId: order._id,
+                              productId: unreviewed.product,
+                              title: unreviewed.title,
+                              image: unreviewed.image
+                            });
+                          }
+                        }}
+                        className="bg-primary-600 hover:bg-primary-700 text-white font-bold"
+                      >
+                        Write Review
+                      </Button>
+                    ) : (
+                      <span className="text-xs font-bold text-emerald-600 flex items-center gap-1 mr-1">
+                        <FiCheck className="h-4 w-4" /> Reviewed
+                      </span>
+                    )}
+
+                    {order.orderItems.some(i => i.isReviewed) && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const reviewedItem = order.orderItems.find(i => i.isReviewed) || order.orderItems[0];
+                            if (reviewedItem) {
+                              setReviewModal({
+                                orderId: order._id,
+                                productId: reviewedItem.product,
+                                title: reviewedItem.title,
+                                image: reviewedItem.image
+                              });
+                            }
+                          }}
+                          className="border-primary-600 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/30 font-bold"
+                        >
+                          Edit Review
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            const reviewedItem = order.orderItems.find(i => i.isReviewed) || order.orderItems[0];
+                            if (!reviewedItem) return;
+                            if (!window.confirm('Are you sure you want to cancel?')) return;
+                            try {
+                              const res = await api.get(`/reviews?productId=${reviewedItem.product}`);
+                              const reviews = res.data?.data?.reviews || [];
+                              const myRev = reviews.find((r: any) =>
+                                r.user?._id === user?._id || r.user?.id === user?._id || r.user === user?._id
+                              );
+                              if (myRev) {
+                                await api.delete(`/reviews/${myRev._id}`);
+                                notifySuccess('Review deleted successfully!');
+                                dispatch(fetchMyOrders());
+                              } else {
+                                notifyError('Review not found');
+                              }
+                            } catch (err: any) {
+                              notifyError(err.response?.data?.message || 'Failed to delete review');
+                            }
+                          }}
+                          className="border-red-200 dark:border-red-900/50 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 font-medium"
+                        >
+                          Cancel
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Cancel Order Option */}
                 {canCancel(order) && (
@@ -379,7 +583,7 @@ export const MyOrders: React.FC = () => {
                   Order Details
                 </h3>
                 <p className="text-xs font-mono text-gray-500 mt-0.5">
-                  Order ID: #{selectedOrderModal._id.toUpperCase()}
+                  Order ID: #{selectedOrderModal?._id.toUpperCase()}
                 </p>
               </div>
               <button
@@ -399,17 +603,17 @@ export const MyOrders: React.FC = () => {
                 <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
                   <FiClock className="h-4 w-4 text-primary-500" /> Current Order Status
                 </span>
-                <span className={`rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider ${getStatusColor(selectedOrderModal.orderStatus)}`}>
-                  {selectedOrderModal.orderStatus}
+                <span className={`rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider ${getStatusColor(selectedOrderModal?.orderStatus)}`}>
+                  {selectedOrderModal?.orderStatus}
                 </span>
               </div>
-              {renderStatusTracker(selectedOrderModal.orderStatus)}
-              {selectedOrderModal.trackingNumber && (
+              {renderStatusTracker(selectedOrderModal?.orderStatus)}
+              {selectedOrderModal?.trackingNumber && (
                 <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 pt-2 border-t border-gray-200 dark:border-gray-700">
                   <FiTruck className="h-4 w-4 text-primary-500" />
                   <span className="font-semibold">Tracking Number:</span>
                   <span className="font-mono bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-800 font-bold">
-                    {selectedOrderModal.trackingNumber}
+                    {selectedOrderModal?.trackingNumber}
                   </span>
                 </div>
               )}
@@ -419,7 +623,7 @@ export const MyOrders: React.FC = () => {
             <div className="space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Product Details</h4>
               <div className="divide-y divide-gray-100 dark:divide-gray-800 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
-                {selectedOrderModal.orderItems.map((item, idx) => (
+                {selectedOrderModal?.orderItems.map((item, idx) => (
                   <div key={idx} className="p-3 bg-white dark:bg-gray-900 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <img
@@ -439,9 +643,74 @@ export const MyOrders: React.FC = () => {
                         </p>
                       </div>
                     </div>
-                    <span className="text-sm font-bold text-gray-900 dark:text-white">
-                      {formatCurrency(item.price * item.quantity)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-900 dark:text-white mr-2">
+                        {formatCurrency(item.price * item.quantity)}
+                      </span>
+                      {!item.isReviewed ? (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setSelectedOrderModal(null);
+                            setReviewModal({
+                              orderId: selectedOrderModal._id,
+                              productId: item.product,
+                              title: item.title,
+                              image: item.image
+                            });
+                          }}
+                          className="bg-primary-600 hover:bg-primary-700 text-white font-bold"
+                        >
+                          Write Review
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedOrderModal(null);
+                              setReviewModal({
+                                orderId: selectedOrderModal._id,
+                                productId: item.product,
+                                title: item.title,
+                                image: item.image
+                              });
+                            }}
+                            className="border-primary-600 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/30 font-bold"
+                          >
+                            Edit Review
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              if (!window.confirm('Are you sure you want to cancel?')) return;
+                              try {
+                                const res = await api.get(`/reviews?productId=${item.product}`);
+                                const reviews = res.data?.data?.reviews || [];
+                                const myRev = reviews.find((r: any) =>
+                                  r.user?._id === user?._id || r.user?.id === user?._id || r.user === user?._id
+                                );
+                                if (myRev) {
+                                  await api.delete(`/reviews/${myRev._id}`);
+                                  notifySuccess('Review deleted successfully!');
+                                  setSelectedOrderModal(null);
+                                  dispatch(fetchMyOrders());
+                                } else {
+                                  notifyError('Review not found');
+                                }
+                              } catch (err: any) {
+                                notifyError(err.response?.data?.message || 'Failed to delete review');
+                              }
+                            }}
+                            className="border-red-200 dark:border-red-900/50 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -457,18 +726,18 @@ export const MyOrders: React.FC = () => {
                 <div className="text-xs space-y-1.5 pt-1">
                   <div className="flex justify-between">
                     <span className="text-gray-400">Payment Method:</span>
-                    <span className="font-bold text-gray-800 dark:text-gray-200">{selectedOrderModal.paymentMethod}</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-200">{selectedOrderModal?.paymentMethod}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Payment Status:</span>
-                    <span className={`font-bold ${selectedOrderModal.isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                      {selectedOrderModal.isPaid ? 'Paid' : 'Pending'}
+                    <span className={`font-bold ${selectedOrderModal?.isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                      {selectedOrderModal?.isPaid ? 'Paid' : 'Pending'}
                     </span>
                   </div>
-                  {selectedOrderModal.isPaid && selectedOrderModal.paidAt && (
+                  {selectedOrderModal?.isPaid && selectedOrderModal?.paidAt && (
                     <div className="flex justify-between">
                       <span className="text-gray-400">Paid At:</span>
-                      <span className="font-semibold text-gray-700 dark:text-gray-300">{formatDate(selectedOrderModal.paidAt)}</span>
+                      <span className="font-semibold text-gray-700 dark:text-gray-300">{formatDate(selectedOrderModal?.paidAt)}</span>
                     </div>
                   )}
                 </div>
@@ -481,13 +750,13 @@ export const MyOrders: React.FC = () => {
                 </h4>
                 <div className="text-xs text-gray-700 dark:text-gray-300 pt-1 space-y-0.5">
                   <p className="font-bold text-gray-900 dark:text-white">
-                    {selectedOrderModal.shippingAddress?.addressType ? `[${selectedOrderModal.shippingAddress.addressType}] ` : ''}Shipping Address:
+                    {selectedOrderModal?.shippingAddress?.addressType ? `[${selectedOrderModal?.shippingAddress.addressType}] ` : ''}Shipping Address:
                   </p>
-                  <p>{selectedOrderModal.shippingAddress?.street}</p>
+                  <p>{selectedOrderModal?.shippingAddress?.street}</p>
                   <p>
-                    {selectedOrderModal.shippingAddress?.city}, {selectedOrderModal.shippingAddress?.state} {selectedOrderModal.shippingAddress?.postalCode}
+                    {selectedOrderModal?.shippingAddress?.city}, {selectedOrderModal?.shippingAddress?.state} {selectedOrderModal?.shippingAddress?.postalCode}
                   </p>
-                  <p className="font-semibold">{selectedOrderModal.shippingAddress?.country || 'India'}</p>
+                  <p className="font-semibold">{selectedOrderModal?.shippingAddress?.country || 'India'}</p>
                 </div>
               </div>
             </div>
@@ -497,31 +766,31 @@ export const MyOrders: React.FC = () => {
               <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Total Amount Breakdown</h4>
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
                 <span>Items Subtotal</span>
-                <span>{formatCurrency(selectedOrderModal.itemsPrice || selectedOrderModal.totalPrice)}</span>
+                <span>{formatCurrency(selectedOrderModal?.itemsPrice || selectedOrderModal?.totalPrice)}</span>
               </div>
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
                 <span>Shipping Fee</span>
-                <span>{selectedOrderModal.shippingPrice === 0 ? 'FREE' : formatCurrency(selectedOrderModal.shippingPrice)}</span>
+                <span>{selectedOrderModal?.shippingPrice === 0 ? 'FREE' : formatCurrency(selectedOrderModal?.shippingPrice)}</span>
               </div>
               <div className="flex justify-between text-gray-600 dark:text-gray-400">
                 <span>Tax</span>
-                <span>{formatCurrency(selectedOrderModal.taxPrice || 0)}</span>
+                <span>{formatCurrency(selectedOrderModal?.taxPrice || 0)}</span>
               </div>
               <div className="flex justify-between text-sm font-extrabold text-gray-900 dark:text-white pt-2 border-t border-gray-100 dark:border-gray-800">
                 <span>Total Amount Paid / Payable</span>
-                <span className="text-primary-600 dark:text-primary-400">{formatCurrency(selectedOrderModal.totalPrice)}</span>
+                <span className="text-primary-600 dark:text-primary-400">{formatCurrency(selectedOrderModal?.totalPrice)}</span>
               </div>
             </div>
 
             {/* Cancel Order Action inside Modal */}
             <div className="pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
               <span className="text-xs text-gray-400">
-                Created on {formatDate(selectedOrderModal.createdAt)}
+                Created on {formatDate(selectedOrderModal?.createdAt)}
               </span>
 
               {canCancel(selectedOrderModal) ? (
                 <>
-                  {confirmCancelId === selectedOrderModal._id ? (
+                  {confirmCancelId === selectedOrderModal?._id ? (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-600 dark:text-gray-400 font-semibold">Confirm cancellation?</span>
                       <Button
@@ -533,17 +802,17 @@ export const MyOrders: React.FC = () => {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => handleCancelOrder(selectedOrderModal._id)}
-                        disabled={isCancelling && cancellingId === selectedOrderModal._id}
+                        onClick={() => handleCancelOrder(selectedOrderModal?._id)}
+                        disabled={isCancelling && cancellingId === selectedOrderModal?._id}
                         className="!bg-red-600 hover:!bg-red-700 border-red-600 text-white"
                       >
-                        {isCancelling && cancellingId === selectedOrderModal._id ? 'Cancelling...' : 'Yes, Cancel Order'}
+                        {isCancelling && cancellingId === selectedOrderModal?._id ? 'Cancelling...' : 'Yes, Cancel Order'}
                       </Button>
                     </div>
                   ) : (
                     <Button
                       size="sm"
-                      onClick={() => setConfirmCancelId(selectedOrderModal._id)}
+                      onClick={() => setConfirmCancelId(selectedOrderModal?._id)}
                       leftIcon={<FiXCircle className="h-4 w-4" />}
                       className="!bg-red-600 hover:!bg-red-700 text-white font-bold"
                     >
@@ -551,12 +820,12 @@ export const MyOrders: React.FC = () => {
                     </Button>
                   )}
                 </>
-              ) : selectedOrderModal.orderStatus === 'Cancelled' ? (
+              ) : selectedOrderModal?.orderStatus === 'Cancelled' ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-950/40 px-3 py-1.5 rounded-lg flex items-center gap-1">
                     <FiXCircle className="h-4 w-4" /> Cancelled
                   </span>
-                  {confirmDeleteId === selectedOrderModal._id ? (
+                  {confirmDeleteId === selectedOrderModal?._id ? (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-600 dark:text-gray-400 font-semibold">Delete permanently?</span>
                       <Button
@@ -568,17 +837,17 @@ export const MyOrders: React.FC = () => {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => handleDeleteOrder(selectedOrderModal._id)}
-                        disabled={deletingId === selectedOrderModal._id}
+                        onClick={() => handleDeleteOrder(selectedOrderModal?._id)}
+                        disabled={deletingId === selectedOrderModal?._id}
                         className="!bg-red-600 hover:!bg-red-700 border-red-600 text-white"
                       >
-                        {deletingId === selectedOrderModal._id ? 'Deleting...' : 'Yes, Delete'}
+                        {deletingId === selectedOrderModal?._id ? 'Deleting...' : 'Yes, Delete'}
                       </Button>
                     </div>
                   ) : (
                     <Button
                       size="sm"
-                      onClick={() => setConfirmDeleteId(selectedOrderModal._id)}
+                      onClick={() => setConfirmDeleteId(selectedOrderModal?._id)}
                       leftIcon={<FiTrash2 className="h-4 w-4" />}
                       className="!bg-red-600 hover:!bg-red-700 text-white font-bold"
                     >
@@ -588,9 +857,101 @@ export const MyOrders: React.FC = () => {
                 </div>
               ) : (
                 <span className="text-xs text-gray-500 italic">
-                  Order cannot be cancelled ({selectedOrderModal.orderStatus})
+                  Order cannot be cancelled ({selectedOrderModal?.orderStatus})
                 </span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {reviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setReviewModal(null)} />
+          <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 p-6 z-10 animate-fade-in">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Write a Review</h3>
+              <button onClick={() => setReviewModal(null)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                <FiX className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-100 dark:border-gray-800">
+              <img src={reviewModal.image} alt={reviewModal.title} className="h-16 w-16 rounded-xl object-cover" />
+              <div>
+                <p className="text-sm font-bold text-gray-900 dark:text-white">{reviewModal.title}</p>
+                <p className="text-xs text-gray-500 mt-1">Share your experience with this product.</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Overall Rating</label>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setRating(star)}
+                      className="p-1 transition-transform hover:scale-110"
+                    >
+                      <svg
+                        className={`h-8 w-8 ${star <= rating ? 'text-amber-400' : 'text-gray-300 dark:text-gray-700'}`}
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Review Comment</label>
+                <textarea
+                  rows={4}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="What did you like or dislike? What is it used for?"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={handleSubmitReview}
+                  disabled={!comment.trim() || isSubmittingReview || isDeletingReview}
+                  className="flex-1 py-3 bg-primary-600 hover:bg-primary-700"
+                >
+                  {isSubmittingReview
+                    ? 'Saving...'
+                    : existingReviewId
+                    ? 'Update Review'
+                    : 'Submit Review'}
+                </Button>
+
+                {existingReviewId && (
+                  <Button
+                    variant="outline"
+                    onClick={handleDeleteReview}
+                    disabled={isSubmittingReview || isDeletingReview}
+                    leftIcon={<FiTrash2 className="h-4 w-4" />}
+                    className="border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  >
+                    {isDeletingReview ? 'Deleting...' : 'Delete Review'}
+                  </Button>
+                )}
+
+                <Button
+                  variant="outline"
+                  onClick={() => setReviewModal(null)}
+                  disabled={isSubmittingReview || isDeletingReview}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </div>
         </div>

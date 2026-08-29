@@ -139,7 +139,22 @@ const deleteCoupon = asyncHandler(async (req, res, next) => {
   );
 });
 
+
+// @desc    Get all active coupons (Public)
+// @route   GET /api/v1/coupons/active
+// @access  Public
+const getActiveCoupons = asyncHandler(async (req, res) => {
+  const coupons = await Coupon.find({ isActive: true, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 });
+  // Filter out those that exceeded usage limit
+  const activeCoupons = coupons.filter(c => c.usageLimit === null || c.usageCount < c.usageLimit);
+
+  res.status(200).json(
+    new ApiResponse(200, { count: activeCoupons.length, coupons: activeCoupons }, 'Active coupons retrieved successfully')
+  );
+});
+
 module.exports = {
+  getActiveCoupons,
   validateCoupon,
   getAllCoupons,
   getCouponById,
