@@ -19,28 +19,43 @@ app.use(helmet());
 //   'http://localhost:3000'
 // ];
 
-const allowedOrigins = [
-  'https://ecommerce-website-three-plum-33.vercel.app',
-  process.env.CLIENT_URL,
-  'http://localhost:5173',
-  'http://localhost:3000'
-].filter(Boolean);
+// const allowedOrigins = [
+//   'http://localhost:5173',
+//   'https://ecommerce-website-62pshyt5h-ecommerce-7cd8.vercel.app'
+// ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or postman)
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-  })
-);
+// app.use(cors({
+//   origin: allowedOrigins,
+//   credentials: true
+// }));
+
+
+// // const allowedOrigins = [
+// //   'https://ecommerce-website-three-plum-33.vercel.app',
+// //   process.env.CLIENT_URL,
+// //   'http://localhost:5173',
+// //   'http://localhost:3000'
+// // ].filter(Boolean);
+
+// Cross-Origin Resource Sharing (CORS) Configuration
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://ecommerce-website-62pshyt5h-ecommerce-7cd8.vercel.app'
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 
 // General Rate Limiter
 app.use('/api', apiLimiter);
