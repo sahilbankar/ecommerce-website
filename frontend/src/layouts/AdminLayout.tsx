@@ -42,6 +42,7 @@ export const AdminLayout: React.FC = () => {
     if (path.startsWith('/admin/products')) return 'Product Catalog';
     if (path.startsWith('/admin/categories')) return 'Categories Management';
     if (path.startsWith('/admin/brands')) return 'Brands Management';
+    if (path.startsWith('/admin/order-status')) return 'Order Status Management';
     if (path.startsWith('/admin/orders')) return 'Order Fulfillment';
     if (path.startsWith('/admin/customers')) return 'Customer Accounts';
     if (path.startsWith('/admin/coupons')) return 'Discount Coupons';

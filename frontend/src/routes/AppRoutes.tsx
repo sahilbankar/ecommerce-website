@@ -27,6 +27,7 @@ import {
   AdminCategories,
   AdminBrands,
   AdminOrders,
+  AdminOrderStatus,
   AdminCustomers,
   AdminCoupons,
   AdminReviews,
@@ -84,6 +85,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="categories" element={<AdminCategories />} />
         <Route path="brands" element={<AdminBrands />} />
         <Route path="orders" element={<AdminOrders />} />
+        <Route path="order-status" element={<AdminOrderStatus />} />
         <Route path="customers" element={<AdminCustomers />} />
         <Route path="coupons" element={<AdminCoupons />} />
         <Route path="reviews" element={<AdminReviews />} />

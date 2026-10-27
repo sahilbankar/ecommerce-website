@@ -12,6 +12,7 @@ import {
   FiRotateCcw,
   FiAward,
   FiStar,
+  FiTruck,
 } from 'react-icons/fi';
 import { FilterState, Category } from '../types';
 import RatingComponent from './RatingComponent';
@@ -37,6 +38,7 @@ export const defaultAdminNavItems: AdminNavItem[] = [
   { label: 'Categories', href: '/admin/categories', icon: <FiFolder className="h-5 w-5" /> },
   { label: 'Brands', href: '/admin/brands', icon: <FiAward className="h-5 w-5" /> },
   { label: 'Orders', href: '/admin/orders', icon: <FiShoppingCart className="h-5 w-5" /> },
+  { label: 'Order Status', href: '/admin/order-status', icon: <FiTruck className="h-5 w-5" /> },
   { label: 'Customers', href: '/admin/customers', icon: <FiUsers className="h-5 w-5" /> },
   { label: 'Coupons', href: '/admin/coupons', icon: <FiTag className="h-5 w-5" /> },
   { label: 'Reviews', href: '/admin/reviews', icon: <FiStar className="h-5 w-5" /> },

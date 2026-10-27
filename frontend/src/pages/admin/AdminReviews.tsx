@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FiStar, FiTrash2, FiSearch, FiCheck, FiX, FiEdit2 } from 'react-icons/fi';
+import { FiStar, FiTrash2, FiSearch, FiCheck, FiX, FiEdit2, FiDownload } from 'react-icons/fi';
+import { exportReviewsPdf } from '../../utils/pdfExport';
 import { api } from '../../services/api';
 import { notifySuccess, notifyError } from '../../components/Toast';
 
@@ -94,11 +95,29 @@ export const AdminReviews: React.FC = () => {
 
   const avgRating = reviews.length ? (reviews.reduce((a, r) => a + r.rating, 0) / reviews.length).toFixed(1) : '0.0';
 
+  const handleDownloadPdf = () => {
+    if (reviews.length === 0) {
+      notifyError('No reviews available to export');
+      return;
+    }
+    exportReviewsPdf(reviews);
+    notifySuccess('Customer reviews report downloaded successfully!');
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
-      <div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Reviews</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{reviews.length} total reviews</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Reviews</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{reviews.length} total reviews</p>
+        </div>
+        <button
+          onClick={handleDownloadPdf}
+          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          <FiDownload className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+          Download PDF Report
+        </button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

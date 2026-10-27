@@ -34,6 +34,24 @@ const getCategoryBySlug = asyncHandler(async (req, res, next) => {
   );
 });
 
+// @desc    Get single category by ID or Slug
+// @route   GET /api/v1/categories/:id
+// @access  Public
+const getCategoryById = asyncHandler(async (req, res, next) => {
+  const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+  const query = isMongoId ? { _id: req.params.id } : { slug: req.params.id };
+  const category = await Category.findOne(query).populate('parentCategory', 'name slug');
+
+  if (!category) {
+    return next(new ApiError(404, 'Category not found'));
+  }
+
+  res.status(200).json(
+    new ApiResponse(200, { category }, 'Category retrieved successfully')
+  );
+});
+
+
 // @desc    Create new category
 // @route   POST /api/v1/categories
 // @access  Private/Admin
@@ -101,13 +119,21 @@ const deleteCategory = asyncHandler(async (req, res, next) => {
   // Check if any product is using this category
   const productCount = await Product.countDocuments({ category: req.params.id });
   if (productCount > 0) {
-    return next(new ApiError(400, `Cannot delete category: ${productCount} product(s) are associated with it`));
+    if (req.query.force === 'true') {
+      await Product.deleteMany({ category: req.params.id });
+    } else {
+      return next(new ApiError(400, `Cannot delete category: ${productCount} product(s) are associated with it`));
+    }
   }
 
   // Check if any subcategory has this category as parent
   const subcategoryCount = await Category.countDocuments({ parentCategory: req.params.id });
   if (subcategoryCount > 0) {
-    return next(new ApiError(400, `Cannot delete category: ${subcategoryCount} subcategory(ies) are associated with it`));
+    if (req.query.force === 'true') {
+      await Category.updateMany({ parentCategory: req.params.id }, { $set: { parentCategory: null } });
+    } else {
+      return next(new ApiError(400, `Cannot delete category: ${subcategoryCount} subcategory(ies) are associated with it`));
+    }
   }
 
   // Delete image from cloudinary if exists
@@ -128,6 +154,7 @@ const deleteCategory = asyncHandler(async (req, res, next) => {
 
 module.exports = {
   getCategories,
+  getCategoryById,
   getCategoryBySlug,
   createCategory,
   updateCategory,

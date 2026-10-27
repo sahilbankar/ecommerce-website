@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '../constants/dummyData';
-import { FilterState, BackendProduct, Product } from '../types';
+import { FilterState, Product, Category } from '../types';
 import ProductCard from '../components/ProductCard';
 import { ShopFilterSidebar } from '../components/Sidebar';
 import Pagination from '../components/Pagination';
@@ -11,39 +10,7 @@ import { AppDispatch } from '../redux/store';
 import { addToCartAsync } from '../redux/slices/cartSlice';
 import { notifySuccess } from '../components/Toast';
 import EmptyState from '../components/EmptyState';
-import { api } from '../services/api';
-
-// Map backend product to frontend Product type
-const mapBackendProduct = (p: BackendProduct): Product => {
-  const catObj = typeof p.category === 'object' && p.category !== null ? p.category : null;
-  const ratingsAvg =
-    p.ratings && typeof p.ratings === 'object' ? p.ratings.average : (p.ratings as number) || 0;
-  const numReviews =
-    p.ratings && typeof p.ratings === 'object' ? p.ratings.numReviews : p.numReviews || 0;
-
-  return {
-    _id: p._id,
-    id: p._id || p.id || '',
-    title: p.title,
-    slug: p.slug || '',
-    description: p.description,
-    price: p.price,
-    discountPrice: p.discountPrice,
-    stock: p.stock,
-    category: catObj
-      ? { id: catObj._id || catObj.id || '', name: catObj.name, slug: catObj.slug || '' }
-      : String(p.category),
-    brand:
-      p.brand && typeof p.brand === 'object'
-        ? p.brand.name
-        : String(p.brand || ''),
-    // images can be [{url, public_id}] from backend — ProductCard handles both
-    images: (p.images || []) as unknown as string[],
-    ratings: ratingsAvg,
-    numReviews,
-    isFeatured: p.isFeatured,
-  };
-};
+import { productService, categoryService } from '../services';
 
 export const Shop: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -62,6 +29,7 @@ export const Shop: React.FC = () => {
     searchQuery: searchParamQuery || undefined,
   });
 
+  const [categories, setCategories] = useState<Category[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
 
@@ -71,61 +39,59 @@ export const Shop: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sync searchQuery with URL param
-  React.useEffect(() => {
-    setFilters((prev) => ({
-      ...prev,
-      searchQuery: searchParamQuery || undefined,
-      category: searchParamCategory || undefined,
-    }));
-    setCurrentPage(1);
+  // Load real categories from backend for filter sidebar
+  useEffect(() => {
+    categoryService
+      .getCategories()
+      .then((cats) => setCategories(cats))
+      .catch(() => setCategories([]));
+  }, []);
+
+  // Sync searchQuery with URL param only when they actually differ
+  useEffect(() => {
+    const newSearch = searchParamQuery || undefined;
+    const newCat = searchParamCategory || undefined;
+    setFilters((prev) => {
+      if (prev.searchQuery === newSearch && prev.category === newCat) {
+        return prev;
+      }
+      setCurrentPage(1);
+      return {
+        ...prev,
+        searchQuery: newSearch,
+        category: newCat,
+      };
+    });
   }, [searchParamQuery, searchParamCategory]);
 
-  // Fetch products from backend
+  // Fetch real products from backend API
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params: Record<string, string | number> = {
+      let sortParam: string | undefined;
+      if (filters.sortBy === 'price-low') sortParam = 'price-asc';
+      else if (filters.sortBy === 'price-high') sortParam = 'price-desc';
+      else if (filters.sortBy === 'rating') sortParam = 'rating';
+      else if (filters.sortBy === 'newest') sortParam = 'newest';
+
+      const response = await productService.getProducts({
         page: currentPage,
         limit: pageSize,
-      };
+        keyword: filters.searchQuery,
+        category: filters.category,
+        minPrice: filters.minPrice,
+        maxPrice: filters.maxPrice,
+        rating: filters.rating,
+        inStock: filters.inStock,
+        sort: sortParam,
+      });
 
-      if (filters.searchQuery) params.keyword = filters.searchQuery;
-      if (filters.category) params.category = filters.category;
-      if (filters.minPrice !== undefined) params.minPrice = filters.minPrice;
-      if (filters.maxPrice !== undefined) params.maxPrice = filters.maxPrice;
-      if (filters.rating !== undefined) params.rating = filters.rating;
-      if (filters.inStock) params.inStock = 'true';
-
-      // Map sortBy to backend sort param
-      if (filters.sortBy === 'price-low') params.sort = 'price-asc';
-      else if (filters.sortBy === 'price-high') params.sort = 'price-desc';
-      else if (filters.sortBy === 'rating') params.sort = 'rating';
-      else if (filters.sortBy === 'newest') params.sort = 'newest';
-
-      const res = await api.get('/products', { params });
-      const data = res.data?.data;
-      const rawProducts: BackendProduct[] = data?.products || [];
-      const pagination = data?.pagination;
-
-      if (
-        rawProducts.length === 0 &&
-        !filters.searchQuery &&
-        !filters.category &&
-        filters.minPrice === undefined &&
-        filters.maxPrice === undefined
-      ) {
-        setProducts(MOCK_PRODUCTS);
-        setTotalItems(MOCK_PRODUCTS.length);
-        setTotalPages(1);
-      } else {
-        setProducts(rawProducts.map(mapBackendProduct));
-        setTotalItems(pagination?.totalProducts || rawProducts.length);
-        setTotalPages(pagination?.totalPages || 1);
-      }
+      setProducts(response.products);
+      setTotalItems(response.totalProducts);
+      setTotalPages(response.totalPages);
     } catch {
-      setProducts(MOCK_PRODUCTS);
-      setTotalItems(MOCK_PRODUCTS.length);
+      setProducts([]);
+      setTotalItems(0);
       setTotalPages(1);
     } finally {
       setIsLoading(false);
@@ -169,7 +135,7 @@ export const Shop: React.FC = () => {
         {/* Left Side: Shop filter sidebar */}
         <div className="shrink-0">
           <ShopFilterSidebar
-            categories={MOCK_CATEGORIES}
+            categories={categories}
             filters={filters}
             onFilterChange={handleFilterChange}
             onResetFilters={handleResetFilters}
@@ -229,7 +195,7 @@ export const Shop: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {products.map((product) => (
                 <ProductCard
-                  key={product.id}
+                  key={product.id || product._id}
                   product={product}
                   onAddToCart={(p) => {
                     dispatch(addToCartAsync({ product: p }));

@@ -27,7 +27,7 @@ router
   .get(getOrderById)
   .delete(deleteOrder);
 
-router.put('/:id/pay', updateOrderToPaid);
+router.put('/:id/pay', admin, updateOrderToPaid);
 router.put('/:id/cancel', cancelOrder);
 router.put('/:id/status', admin, updateOrderStatus);
 

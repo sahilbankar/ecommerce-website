@@ -8,6 +8,7 @@ import {
   FiStar,
   FiAlertCircle,
   FiPackage,
+  FiDownload,
 } from 'react-icons/fi';
 import axios from 'axios';
 import { api } from '../../services/api';
@@ -18,6 +19,8 @@ import Button from '../../components/Button';
 import Pagination from '../../components/Pagination';
 import { TableSkeleton } from '../../components/SkeletonLoader';
 import { formatCurrency } from '../../utils';
+import { exportProductsPdf } from '../../utils/pdfExport';
+import { peacockWallArtFront } from '../../assets';
 
 const statusColors: Record<string, string> = {
   'In Stock': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
@@ -144,10 +147,10 @@ export const AdminProducts: React.FC = () => {
   const getImageUrl = (product: BackendProduct): string => {
     if (product.images && product.images.length > 0) {
       const first = product.images[0];
-      if (typeof first === 'string') return first;
-      if (first && typeof first === 'object' && first.url) return first.url;
+      if (typeof first === 'string' && first.trim()) return first.trim();
+      if (first && typeof first === 'object' && first.url && first.url.trim()) return first.url.trim();
     }
-    return 'https://placehold.co/80x80/f3f4f6/9ca3af?text=No+Image';
+    return peacockWallArtFront;
   };
 
   // Helper to extract Category name
@@ -185,6 +188,24 @@ export const AdminProducts: React.FC = () => {
     return 0;
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    setIsExporting(true);
+    try {
+      // Fetch full catalog for complete comprehensive report
+      const response = await api.get('/products', { params: { limit: 1000 } });
+      const allProducts: BackendProduct[] = response.data?.data?.products || [];
+      exportProductsPdf(allProducts.length > 0 ? allProducts : products);
+      notifySuccess('Products report downloaded successfully!');
+    } catch {
+      exportProductsPdf(products);
+      notifySuccess('Products report downloaded!');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Header */}
@@ -195,12 +216,24 @@ export const AdminProducts: React.FC = () => {
             {totalProducts} total products registered in catalog
           </p>
         </div>
-        <Link
-          to="/admin/products/add"
-          className="inline-flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors"
-        >
-          <FiPlus className="h-4 w-4" /> Add Product
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+            title="Download complete Products PDF Report"
+          >
+            <FiDownload className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+            {isExporting ? 'Generating...' : 'Download PDF Report'}
+          </button>
+          <Link
+            to="/admin/products/add"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors"
+          >
+            <FiPlus className="h-4 w-4" /> Add Product
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}

@@ -24,11 +24,11 @@ export const Footer: React.FC = () => {
             <Link to="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight text-primary-600 dark:text-primary-400">
               <span>🛒</span>
               <span className="bg-gradient-to-r from-primary-600 to-indigo-600 bg-clip-text text-transparent dark:from-primary-400 dark:to-indigo-400">
-                E-SHOP
+                Shree Home Decor
               </span>
             </Link>
             <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
-              Your one-stop destination for premium products, exclusive deals, and fast global delivery.
+              Your one-stop destination for premium curtains, bedsheets, sofa covers, and elegant home decor essentials.
             </p>
             <form onSubmit={handleSubscribe} className="flex max-w-md gap-2">
               <input
@@ -123,7 +123,7 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Section */}
         <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
-          <p>&copy; {new Date().getFullYear()} E-SHOP. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Shree Home Decor. All rights reserved.</p>
 
           {/* Social Icons */}
           <div className="flex items-center space-x-4">

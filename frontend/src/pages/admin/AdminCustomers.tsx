@@ -10,11 +10,13 @@ import {
   FiClock,
   FiShoppingBag,
   FiUserPlus,
+  FiDownload,
 } from 'react-icons/fi';
 import axios from 'axios';
 import { api } from '../../services/api';
 import { notifySuccess, notifyError } from '../../components/Toast';
 import { formatCurrency } from '../../utils';
+import { exportCustomersPdf } from '../../utils/pdfExport';
 
 interface CustomerActivity {
   type: 'REGISTER' | 'LOGIN' | 'ORDER';
@@ -199,6 +201,15 @@ export const AdminCustomers: React.FC = () => {
         });
   };
 
+  const handleDownloadPdf = () => {
+    if (customers.length === 0) {
+      notifyError('No customer records available to export');
+      return;
+    }
+    exportCustomersPdf(customers);
+    notifySuccess('Customer directory report downloaded successfully!');
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page Header */}
@@ -211,6 +222,13 @@ export const AdminCustomers: React.FC = () => {
             Real registered customers stored in MongoDB with active session logs
           </p>
         </div>
+        <button
+          onClick={handleDownloadPdf}
+          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          <FiDownload className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+          Download PDF Report
+        </button>
       </div>
 
       {/* Summary KPI Cards */}

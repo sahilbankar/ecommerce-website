@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { FiArrowRight } from 'react-icons/fi';
 import { Category } from '../types';
+import { peacockWallArtRoom } from '../assets';
 
 export interface CategoryCardProps {
   category: Category;
@@ -11,8 +12,7 @@ export interface CategoryCardProps {
 export const CategoryCard: React.FC<CategoryCardProps> = ({ category, className = '' }) => {
   const { name, slug, image, productCount } = category;
 
-  const fallbackImg =
-    'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&auto=format&fit=crop&q=80';
+  const fallbackImg = peacockWallArtRoom;
 
   return (
     <Link
@@ -24,6 +24,11 @@ export const CategoryCard: React.FC<CategoryCardProps> = ({ category, className 
         <img
           src={image || fallbackImg}
           alt={name}
+          loading="lazy"
+          decoding="async"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = fallbackImg;
+          }}
           className="h-full w-full object-cover object-center opacity-80 transition-transform duration-500 group-hover:scale-110 group-hover:opacity-75"
         />
       </div>

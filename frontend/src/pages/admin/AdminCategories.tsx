@@ -8,6 +8,7 @@ import {
   FiFolder,
   FiCheckCircle,
   FiAlertTriangle,
+  FiDownload,
 } from 'react-icons/fi';
 import axios from 'axios';
 import { api } from '../../services/api';
@@ -16,6 +17,7 @@ import { notifySuccess, notifyError } from '../../components/Toast';
 import { Modal } from '../../components/Modal';
 import Button from '../../components/Button';
 import { TableSkeleton } from '../../components/SkeletonLoader';
+import { exportCategoriesPdf } from '../../utils/pdfExport';
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
   if (axios.isAxiosError(error) && error.response?.data) {
@@ -49,6 +51,8 @@ export const AdminCategories: React.FC = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<BackendCategory | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Fetch Categories from Backend (View / Display)
   const fetchCategories = useCallback(async () => {
@@ -172,6 +176,15 @@ export const AdminCategories: React.FC = () => {
     return nameMatch || slugMatch || descMatch;
   });
 
+  const handleDownloadPdf = () => {
+    if (categories.length === 0) {
+      notifyError('No categories available to export');
+      return;
+    }
+    exportCategoriesPdf(categories);
+    notifySuccess('Categories report downloaded successfully!');
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -182,12 +195,21 @@ export const AdminCategories: React.FC = () => {
             Manage product categories in your store
           </p>
         </div>
-        <Button
-          onClick={handleOpenAddModal}
-          leftIcon={<FiPlus className="h-4 w-4" />}
-        >
-          Add Category
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={handleDownloadPdf}
+            leftIcon={<FiDownload className="h-4 w-4 text-primary-600" />}
+          >
+            Download PDF Report
+          </Button>
+          <Button
+            onClick={handleOpenAddModal}
+            leftIcon={<FiPlus className="h-4 w-4" />}
+          >
+            Add Category
+          </Button>
+        </div>
       </div>
 
       {/* Search Bar */}

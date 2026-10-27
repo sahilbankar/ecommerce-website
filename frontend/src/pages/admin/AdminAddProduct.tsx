@@ -38,7 +38,12 @@ interface ImagePreview {
   variant: string;
 }
 
-const QUICK_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size'];
+const QUICK_SIZES = [
+  'Single', 'Double', 'Queen', 'King',
+  'Small', 'Medium', 'Large',
+  '4×6 ft', '5×7 ft', '6×8 ft', '7×5 ft',
+  'Free Size',
+];
 
 export const AdminAddProduct: React.FC = () => {
   const navigate = useNavigate();
@@ -460,23 +465,29 @@ export const AdminAddProduct: React.FC = () => {
                   ))}
                 </div>
               </div>
-              {/* Custom size input */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={customSizeInput}
-                  onChange={(e) => setCustomSizeInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomSize())}
-                  placeholder="Custom size (e.g. 28, UK 8, 42)"
-                  className="flex-1 px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-                <button
-                  type="button"
-                  onClick={addCustomSize}
-                  className="px-4 py-2 rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors"
-                >
-                  <FiPlus className="h-4 w-4" />
-                </button>
+              {/* Add Custom Size */}
+              <div className="border-t border-gray-100 dark:border-gray-800 pt-3">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                  Add Custom Size:
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customSizeInput}
+                    onChange={(e) => setCustomSizeInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomSize())}
+                    placeholder="e.g. Single, Double, Queen, King, 5×4 ft, 7×5 ft, 90×108 inch..."
+                    className="flex-1 px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomSize}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 active:scale-95 transition-all whitespace-nowrap"
+                  >
+                    <FiPlus className="h-3.5 w-3.5" />
+                    Add Size
+                  </button>
+                </div>
               </div>
               {/* Active size chips */}
               {sizes.length > 0 && (

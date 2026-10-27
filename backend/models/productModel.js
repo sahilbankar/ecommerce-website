@@ -124,9 +124,11 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Full text search index on title and description
+// Indexes for performant filtering and sorting
 productSchema.index({ title: 'text', description: 'text' });
 productSchema.index({ price: 1, category: 1 });
+productSchema.index({ isActive: 1, createdAt: -1 });
+productSchema.index({ isActive: 1, isFeatured: 1, createdAt: -1 });
 
 // Instance Method: Check if product is in stock
 productSchema.methods.isInStock = function (requestedQuantity = 1) {

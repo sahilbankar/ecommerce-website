@@ -92,6 +92,13 @@ export const OrderSuccess: React.FC = () => {
 
       {order && (
         <>
+          {order.isPaid && (
+            <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-3 text-emerald-800 dark:text-emerald-300 font-bold text-sm shadow-sm">
+              <FiCheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>Online Payment Successful</span>
+            </div>
+          )}
+
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-5 rounded-2xl shadow-sm text-left text-xs space-y-2.5">
             <div className="flex justify-between border-b border-gray-50 dark:border-gray-800/40 pb-2">
               <span className="text-gray-400">Order ID</span>
@@ -99,8 +106,20 @@ export const OrderSuccess: React.FC = () => {
             </div>
             <div className="flex justify-between border-b border-gray-50 dark:border-gray-800/40 pb-2">
               <span className="text-gray-400">Order Status</span>
-              <span className={`font-bold ${order.orderStatus === 'Cancelled' ? 'text-red-500' : 'text-primary-600 dark:text-primary-400'}`}>
+              <span className={`font-bold ${
+                order.orderStatus === 'Cancelled'
+                  ? 'text-red-500'
+                  : order.orderStatus === 'Confirmed'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-primary-600 dark:text-primary-400'
+              }`}>
                 {order.orderStatus}
+              </span>
+            </div>
+            <div className="flex justify-between border-b border-gray-50 dark:border-gray-800/40 pb-2">
+              <span className="text-gray-400">Payment Status</span>
+              <span className={`font-bold ${order.isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                {order.isPaid ? 'Paid' : 'Pending'}
               </span>
             </div>
             {order.cancellationReason && (

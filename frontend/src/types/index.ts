@@ -109,6 +109,7 @@ export interface BackendProduct {
   } | number;
   numReviews?: number;
   specs?: ProductSpec[];
+  specifications?: ProductSpec[] | Record<string, any>;
   isFeatured?: boolean;
   isActive?: boolean;
   sizes?: string[];

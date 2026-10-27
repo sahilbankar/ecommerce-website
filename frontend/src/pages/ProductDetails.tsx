@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { FiHeart, FiShoppingCart, FiMinus, FiPlus, FiStar, FiTrash2, FiEdit2 } from 'react-icons/fi';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import {
+  FiHeart,
+  FiShoppingCart,
+  FiMinus,
+  FiPlus,
+  FiStar,
+  FiTrash2,
+  FiEdit2,
+  FiCheck,
+  FiCheckCircle
+} from 'react-icons/fi';
 import { FaHeart } from 'react-icons/fa';
 import { BackendProduct, Product, ProductSpec } from '../types';
 import { formatCurrency } from '../utils';
@@ -13,40 +23,10 @@ import { toggleWishlistAsync } from '../redux/slices/wishlistSlice';
 import { notifySuccess, notifyError } from '../components/Toast';
 import Breadcrumb from '../components/Breadcrumb';
 import ProductCard from '../components/ProductCard';
-import { api } from '../services/api';
 import Skeleton from '../components/SkeletonLoader';
-
-
-// Map backend product to frontend Product type
-const mapBackendProduct = (p: BackendProduct): Product => {
-  const catObj = typeof p.category === 'object' && p.category !== null ? p.category : null;
-  const ratingsAvg =
-    p.ratings && typeof p.ratings === 'object' ? p.ratings.average : (p.ratings as number) || 0;
-  const numReviews =
-    p.ratings && typeof p.ratings === 'object' ? p.ratings.numReviews : p.numReviews || 0;
-
-  return {
-    _id: p._id,
-    id: p._id || p.id || '',
-    title: p.title,
-    slug: p.slug || '',
-    description: p.description,
-    price: p.price,
-    discountPrice: p.discountPrice,
-    stock: p.stock,
-    category: catObj
-      ? { id: catObj._id || catObj.id || '', name: catObj.name, slug: catObj.slug || '' }
-      : String(p.category),
-    brand:
-      p.brand && typeof p.brand === 'object'
-        ? p.brand.name
-        : String(p.brand || ''),
-    images: (p.images || []) as unknown as string[],
-    ratings: ratingsAvg,
-    numReviews,
-    isFeatured: p.isFeatured,
-  };
-};
+import { productService, reviewService, mapBackendProduct } from '../services';
+import { api } from '../services/api';
+import { peacockWallArtFront } from '../assets';
 
 export const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -74,6 +54,8 @@ export const ProductDetails: React.FC = () => {
   const [reviews, setReviews] = useState<any[]>([]);
   const [newReviewRating, setNewReviewRating] = useState(5);
   const [newReviewComment, setNewReviewComment] = useState('');
+  const [hasPurchased, setHasPurchased] = useState(false);
+  const [userOrderId, setUserOrderId] = useState<string | undefined>(undefined);
 
   // Derived: active variant info (price/stock) for selected size
   const activeVariant = product?.variants?.find(
@@ -88,27 +70,12 @@ export const ProductDetails: React.FC = () => {
     const loadProduct = async () => {
       setIsLoading(true);
       try {
-        // Try by ID first, then by slug
-        let res;
-        try {
-          res = await api.get(`/products/${id}`);
-        } catch {
-          res = await api.get(`/products/slug/${id}`);
-        }
-
-        const prod: BackendProduct = res.data?.data?.product;
+        const prod = await productService.getProductByIdOrSlug(id);
         if (!prod) throw new Error('Product not found');
 
         setProduct(prod);
-        
-        try {
-          const revRes = await api.get(`/reviews?productId=${prod._id}`);
-          setReviews(revRes.data?.data?.reviews || []);
-        } catch (e) {
-          console.error('Failed to load reviews', e);
-        }
 
-        // Resolve image URLs with variant tags
+        // Resolve image URLs with variant tags immediately
         const urls: { url: string; variant: string }[] = (prod.images || []).map((img: unknown) => {
           if (typeof img === 'string') return { url: img, variant: '' };
           if (img && typeof img === 'object' && 'url' in img) {
@@ -123,32 +90,28 @@ export const ProductDetails: React.FC = () => {
         // Initialize size selection to first available size
         if (prod.sizes && prod.sizes.length > 0) {
           setSelectedSize(prod.sizes[0]);
-          // Switch to variant image only if one is explicitly assigned
           const variantImg = urls.find((u) => u.variant === prod.sizes![0]);
           if (variantImg && variantImg.url) setActiveImage(variantImg.url);
         }
 
-        // Fetch related products by category
-        if (prod.category) {
-          const catId =
-            typeof prod.category === 'object' && prod.category !== null
-              ? prod.category._id || prod.category.id
-              : prod.category;
-          if (catId) {
-            const relRes = await api.get('/products', {
-              params: { category: catId, limit: 4 },
-            });
-            const rawRelated: BackendProduct[] = relRes.data?.data?.products || [];
-            setRelatedProducts(
-              rawRelated
-                .filter((p) => (p._id || p.id) !== (prod._id || prod.id))
-                .slice(0, 4)
-                .map(mapBackendProduct)
-            );
-          }
-        }
+        // Fetch reviews and related products concurrently in the background without blocking main UI
+        const catId =
+          typeof prod.category === 'object' && prod.category !== null
+            ? prod.category._id || prod.category.id
+            : prod.category;
+        const prodId = prod._id || prod.id || '';
+
+        Promise.all([
+          reviewService.getProductReviews(prodId),
+          catId
+            ? productService.getRelatedProducts(String(catId), prodId, 4)
+            : Promise.resolve([]),
+        ]).then(([productReviews, related]) => {
+          setReviews(productReviews);
+          setRelatedProducts(related);
+        });
       } catch {
-        notifyError('Failed to load product. Redirecting to shop.');
+        notifyError('Product details could not be loaded. Redirecting to shop.');
         navigate('/shop');
       } finally {
         setIsLoading(false);
@@ -157,6 +120,41 @@ export const ProductDetails: React.FC = () => {
 
     loadProduct();
   }, [id, navigate]);
+
+  // Check purchase status for customer to allow reviews
+  useEffect(() => {
+    if (!currentUser || !product) {
+      setHasPurchased(false);
+      setUserOrderId(undefined);
+      return;
+    }
+    const checkPurchase = async () => {
+      try {
+        const prodId = product._id || product.id || '';
+        const res = await api.get('/orders/my-orders');
+        const orders = res.data?.data?.orders || [];
+        const foundOrder = orders.find((o: any) =>
+          o.orderStatus !== 'Cancelled' &&
+          o.orderItems?.some((item: any) => {
+            const pId = typeof item.product === 'object' && item.product
+              ? (item.product._id || item.product.id)
+              : item.product;
+            return pId && prodId && pId.toString() === prodId.toString();
+          })
+        );
+        if (foundOrder || currentUser.role === 'admin') {
+          setHasPurchased(true);
+          setUserOrderId(foundOrder?._id);
+        } else {
+          setHasPurchased(false);
+          setUserOrderId(undefined);
+        }
+      } catch {
+        setHasPurchased(false);
+      }
+    };
+    checkPurchase();
+  }, [currentUser, product]);
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -197,38 +195,29 @@ export const ProductDetails: React.FC = () => {
       notifyError('Please enter a review comment.');
       return;
     }
-    const prodId = product._id || product.id;
+    const prodId = product._id || product.id || '';
     setIsSubmittingReview(true);
     try {
       if (editingReviewId) {
-        await api.put(`/reviews/${editingReviewId}`, {
-          rating: newReviewRating,
-          comment: newReviewComment.trim(),
-        });
+        await reviewService.updateReview(editingReviewId, newReviewRating, newReviewComment.trim());
         notifySuccess('Review updated successfully!');
       } else {
-        await api.post('/reviews', {
-          productId: prodId,
-          rating: newReviewRating,
-          comment: newReviewComment.trim(),
-        });
+        await reviewService.submitReview(prodId, newReviewRating, newReviewComment.trim(), '', userOrderId);
         notifySuccess('Review submitted successfully!');
       }
       setNewReviewComment('');
       setNewReviewRating(5);
       setEditingReviewId(null);
 
-      // Refresh product details & reviews
-      const [prodRes, revRes] = await Promise.all([
-        api.get(`/products/${prodId}`),
-        api.get(`/reviews?productId=${prodId}`),
+      // Refresh product details & reviews via services
+      const [updatedProd, revs] = await Promise.all([
+        productService.getProductByIdOrSlug(prodId),
+        reviewService.getProductReviews(prodId),
       ]);
-      if (prodRes.data?.data?.product) {
-        setProduct(prodRes.data.data.product);
-      }
-      setReviews(revRes.data?.data?.reviews || []);
+      if (updatedProd) setProduct(updatedProd);
+      setReviews(revs);
     } catch (err: any) {
-      notifyError(err.response?.data?.message || 'Failed to save review');
+      notifyError(err.response?.data?.message || err.message || 'Failed to save review');
     } finally {
       setIsSubmittingReview(false);
     }
@@ -237,19 +226,19 @@ export const ProductDetails: React.FC = () => {
   const handleDeleteReview = async (reviewId: string) => {
     if (!window.confirm('Are you sure you want to delete this review?')) return;
     try {
-      await api.delete(`/reviews/${reviewId}`);
+      await reviewService.deleteReview(reviewId);
       notifySuccess('Review deleted successfully!');
       const prodId = product?._id || product?.id;
       if (prodId) {
-        const [prodRes, revRes] = await Promise.all([
-          api.get(`/products/${prodId}`),
-          api.get(`/reviews?productId=${prodId}`),
+        const [updatedProd, revs] = await Promise.all([
+          productService.getProductByIdOrSlug(prodId),
+          reviewService.getProductReviews(prodId),
         ]);
-        if (prodRes.data?.data?.product) setProduct(prodRes.data.data.product);
-        setReviews(revRes.data?.data?.reviews || []);
+        if (updatedProd) setProduct(updatedProd);
+        setReviews(revs);
       }
     } catch (err: any) {
-      notifyError(err.response?.data?.message || 'Failed to delete review');
+      notifyError(err.response?.data?.message || err.message || 'Failed to delete review');
     }
   };
 
@@ -277,51 +266,73 @@ export const ProductDetails: React.FC = () => {
       ? product.category.name
       : String(product.category);
   const brandName =
-    product.brand && typeof product.brand === 'object'
+    typeof product.brand === 'object' && product.brand !== null
       ? product.brand.name
-      : String(product.brand || '');
+      : product.brand;
+
   const isOutOfStock = displayStock <= 0;
-  const ratingsAvg =
-    product.ratings && typeof product.ratings === 'object'
-      ? product.ratings.average
-      : (product.ratings as number) || 0;
-  const numReviews =
-    product.ratings && typeof product.ratings === 'object'
-      ? product.ratings.numReviews
-      : product.numReviews || 0;
 
-  const specs: ProductSpec[] = product.specs || [];
+  const liveNumReviews = reviews.length;
+  const liveAvgRating =
+    reviews.length > 0
+      ? Math.round((reviews.reduce((acc, r) => acc + (r.rating || 0), 0) / reviews.length) * 10) / 10
+      : (product.ratings && typeof product.ratings === 'object'
+          ? product.ratings.average
+          : (product.ratings as number) || 0);
 
-  const fallbackImage =
-    'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80';
+  // Normalize specifications safely: Array of objects or plain key-value record
+  const rawSpecs = product.specifications || product.specs || [];
+  const specs: ProductSpec[] = Array.isArray(rawSpecs)
+    ? (rawSpecs as ProductSpec[])
+    : rawSpecs && typeof rawSpecs === 'object'
+    ? Object.entries(rawSpecs).map(([key, value]) => ({
+        key,
+        value: String(value),
+      }))
+    : [];
+
+  const myExistingReview = currentUser
+    ? reviews.find(
+        (r) =>
+          r.user?._id === (currentUser as any)._id ||
+          r.user?.id === (currentUser as any)._id ||
+          r.user === (currentUser as any)._id ||
+          r.user?._id === (currentUser as any).id ||
+          r.user?.id === (currentUser as any).id ||
+          r.user === (currentUser as any).id
+      )
+    : null;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-12">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-12 animate-fade-in">
       <Breadcrumb
         items={[
           { label: 'Shop', href: '/shop' },
+          { label: categoryName, href: `/shop?category=${encodeURIComponent(categoryName)}` },
           { label: product.title },
         ]}
       />
 
-      {/* Main Showcase Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        {/* Left Side: Images View */}
+      <div className="grid grid-cols-1 gap-12 lg:grid-cols-2">
+        {/* Left Side: Product Gallery */}
         <div className="space-y-4">
-          <div className="aspect-square overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+          <div className="aspect-square overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 shadow-sm">
             <img
-              src={activeImage || fallbackImage}
+              src={activeImage || peacockWallArtFront}
               alt={product.title}
-              className="h-full w-full object-cover object-center transition-transform hover:scale-105"
+              className="h-full w-full object-cover object-center transition-all duration-300"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = peacockWallArtFront;
+              }}
             />
           </div>
 
-          {/* Thumbnails — show all images when there are any */}
-          {imageUrls.length > 0 && (
-            <div className="flex gap-3 overflow-x-auto py-2">
+          {imageUrls.length > 1 && (
+            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin">
               {imageUrls.map((imgObj, idx) => (
                 <button
                   key={idx}
+                  type="button"
                   onClick={() => setActiveImage(imgObj.url)}
                   className={`relative aspect-square w-20 shrink-0 overflow-hidden rounded-xl border-2 transition-all ${
                     activeImage === imgObj.url
@@ -353,11 +364,15 @@ export const ProductDetails: React.FC = () => {
 
             {/* Ratings */}
             <div className="mt-2 flex items-center gap-2">
-              <RatingComponent value={ratingsAvg} size="sm" showNumber />
+              <RatingComponent value={liveAvgRating} size="sm" showNumber />
               <span className="text-xs text-gray-400">|</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {numReviews} Verified Reviews
-              </span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('reviews')}
+                className="text-xs text-gray-500 hover:text-primary-600 dark:text-gray-400 transition-colors"
+              >
+                {liveNumReviews} Verified {liveNumReviews === 1 ? 'Review' : 'Reviews'}
+              </button>
             </div>
 
             {/* Price section */}
@@ -378,47 +393,28 @@ export const ProductDetails: React.FC = () => {
               )}
             </div>
 
-            <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+            {/* Description */}
+            <p className="mt-4 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
               {product.description}
             </p>
           </div>
 
           <div className="space-y-6 border-y border-gray-100 dark:border-gray-800 py-6">
-            {/* Color Select — show only if product has colors */}
-            {product.colors && product.colors.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Color</span>
-                <div className="flex flex-wrap gap-2">
-                  {product.colors.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setSelectedColor(color)}
-                      className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold border transition-all ${
-                        selectedColor === color
-                          ? 'border-primary-600 bg-primary-50/20 text-primary-600 dark:border-primary-400 dark:text-primary-400'
-                          : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
-                      }`}
-                    >
-                      {color}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Size Select — show real sizes from product */}
+            {/* Size Variants */}
             {product.sizes && product.sizes.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Size</span>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 block">
+                  Select Size
+                </label>
                 <div className="flex flex-wrap gap-2">
                   {product.sizes.map((size) => (
                     <button
                       key={size}
+                      type="button"
                       onClick={() => {
                         setSelectedSize(size);
-                        // Auto-switch main image to the one assigned to this size
-                        const variantImg = imageUrls.find((u) => u.variant === size);
-                        if (variantImg) setActiveImage(variantImg.url);
+                        const match = imageUrls.find((u) => u.variant === size);
+                        if (match && match.url) setActiveImage(match.url);
                       }}
                       className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold border transition-all ${
                         selectedSize === size
@@ -433,67 +429,104 @@ export const ProductDetails: React.FC = () => {
               </div>
             )}
 
-            {/* Quantity Selector */}
-            <div className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Quantity</span>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
-                  <button
-                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    disabled={quantity <= 1}
-                    className="p-2 text-gray-500 hover:text-gray-700 disabled:opacity-40"
-                  >
-                    <FiMinus />
-                  </button>
-                  <span className="w-10 text-center text-sm font-semibold text-gray-800 dark:text-gray-200">
-                    {quantity}
-                  </span>
-                  <button
-                    onClick={() => setQuantity((q) => q + 1)}
-                    className="p-2 text-gray-500 hover:text-gray-700"
-                  >
-                    <FiPlus />
-                  </button>
+            {/* Color Selection */}
+            {product.colors && product.colors.length > 0 && (
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2 block">
+                  Select Color
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {product.colors.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => {
+                        setSelectedColor(color);
+                        const match = imageUrls.find((u) => u.variant.toLowerCase() === color.toLowerCase());
+                        if (match && match.url) setActiveImage(match.url);
+                      }}
+                      className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold border transition-all ${
+                        selectedColor === color
+                          ? 'border-primary-600 bg-primary-50/20 text-primary-600 dark:border-primary-400 dark:text-primary-400'
+                          : 'border-gray-200 hover:border-gray-300 dark:border-gray-700'
+                      }`}
+                    >
+                      {color}
+                    </button>
+                  ))}
                 </div>
-                <span className="text-xs text-gray-500">
-                  {displayStock > 0 ? `${displayStock} units available` : 'Out of stock'}
-                </span>
               </div>
+            )}
+
+            {/* Quantity Selector */}
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                Quantity
+              </span>
+              <div className="flex items-center rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  disabled={quantity <= 1 || isOutOfStock}
+                  className="p-2 text-gray-500 hover:text-gray-700 disabled:opacity-40"
+                >
+                  <FiMinus className="h-3.5 w-3.5" />
+                </button>
+                <span className="w-10 text-center text-sm font-semibold text-gray-900 dark:text-white">
+                  {quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity((q) => Math.min(displayStock, q + 1))}
+                  disabled={quantity >= displayStock || isOutOfStock}
+                  className="p-2 text-gray-500 hover:text-gray-700 disabled:opacity-40"
+                >
+                  <FiPlus className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <span className="text-xs text-gray-500">
+                {isOutOfStock ? (
+                  <span className="text-red-500 font-bold">Out of Stock</span>
+                ) : (
+                  `${displayStock} units available`
+                )}
+              </span>
             </div>
           </div>
 
-          {/* CTA buttons */}
-          <div className="flex flex-wrap gap-4">
+          {/* Action Buttons */}
+          <div className="flex gap-4">
             <Button
-              className="flex-1 min-w-[200px]"
-              disabled={isOutOfStock}
               onClick={handleAddToCart}
-              leftIcon={<FiShoppingCart className="h-5 w-5" />}
+              disabled={isOutOfStock}
+              leftIcon={<FiShoppingCart className="h-4 w-4" />}
+              className="flex-1 py-3 text-sm font-bold shadow-md"
             >
-              Add To Cart
+              {isOutOfStock ? 'Out of Stock' : 'Add to Cart'}
             </Button>
             <Button
               variant="outline"
               onClick={handleAddToWishlist}
               leftIcon={
                 isInWishlist ? (
-                  <FaHeart className="h-5 w-5 text-red-500" />
+                  <FaHeart className="h-4 w-4 text-red-500" />
                 ) : (
-                  <FiHeart className="h-5 w-5" />
+                  <FiHeart className="h-4 w-4" />
                 )
               }
               className={isInWishlist ? 'border-red-200 dark:border-red-900/50 bg-red-50/20 text-red-600 dark:text-red-400' : ''}
             >
-              {isInWishlist ? 'In Wishlist' : 'Wishlist'}
+              Wishlist
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Tabs Section: Description vs Reviews */}
+      {/* Product Details Tabs (Specifications & Reviews) */}
       <div className="border-t border-gray-200 dark:border-gray-800 pt-10">
         <div className="flex border-b border-gray-200 dark:border-gray-800 gap-8 mb-6">
           <button
+            type="button"
             onClick={() => setActiveTab('details')}
             className={`pb-4 text-sm font-bold tracking-tight transition-all border-b-2 ${
               activeTab === 'details'
@@ -504,6 +537,7 @@ export const ProductDetails: React.FC = () => {
             Product Specifications
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('reviews')}
             className={`pb-4 text-sm font-bold tracking-tight transition-all border-b-2 ${
               activeTab === 'reviews'
@@ -511,13 +545,13 @@ export const ProductDetails: React.FC = () => {
                 : 'border-transparent text-gray-400 hover:text-gray-600'
             }`}
           >
-            Reviews ({numReviews})
+            Reviews ({liveNumReviews})
           </button>
         </div>
 
         {activeTab === 'details' ? (
           <div className="max-w-3xl space-y-4">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Specifications</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Product Specifications</h3>
             <table className="w-full text-sm divide-y divide-gray-100 dark:divide-gray-850">
               <tbody>
                 <tr className="py-2.5 flex justify-between border-b border-gray-50 dark:border-gray-800/40">
@@ -539,118 +573,213 @@ export const ProductDetails: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-8 max-w-3xl">
-            {/* Write a Review Form */}
-            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-base font-bold text-gray-900 dark:text-white">
-                  {editingReviewId ? 'Edit Your Review' : 'Write a Customer Review'}
-                </h4>
-                {editingReviewId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingReviewId(null);
-                      setNewReviewComment('');
-                      setNewReviewRating(5);
-                    }}
-                    className="text-xs font-semibold text-gray-500 hover:text-gray-700 underline"
-                  >
-                    Cancel Edit
-                  </button>
-                )}
-              </div>
-              <form onSubmit={handleReviewSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                    Rating
-                  </label>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setNewReviewRating(star)}
-                        className="focus:outline-none transition-transform hover:scale-110"
-                      >
-                        <FiStar
-                          className={`h-6 w-6 ${
-                            star <= newReviewRating
-                              ? 'text-amber-400 fill-amber-400'
-                              : 'text-gray-300 dark:text-gray-600'
-                          }`}
-                        />
-                      </button>
-                    ))}
-                    <span className="ml-2 text-xs font-bold text-gray-700 dark:text-gray-300">
-                      {newReviewRating} / 5
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                    Your Review / Comment
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={newReviewComment}
-                    onChange={(e) => setNewReviewComment(e.target.value)}
-                    placeholder="Write your experience with this product..."
-                    required
-                    className="w-full px-4 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 resize-none placeholder-gray-400"
-                  />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button
-                    type="submit"
-                    disabled={isSubmittingReview || !newReviewComment.trim()}
-                    className="w-full sm:w-auto"
-                  >
-                    {isSubmittingReview ? (editingReviewId ? 'Updating...' : 'Submitting...') : (editingReviewId ? 'Update Review' : 'Submit Review')}
-                  </Button>
-                  {editingReviewId && (
+            {/* Write a Review Section: Only for verified purchasers or admin */}
+            {currentUser ? (
+              hasPurchased || currentUser.role === 'admin' ? (
+                myExistingReview && !editingReviewId ? (
+                  <div className="rounded-2xl border border-primary-200 dark:border-primary-900/40 bg-primary-50/40 dark:bg-primary-950/20 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-bold text-primary-700 dark:text-primary-300">You reviewed this product</span>
+                        <RatingComponent value={myExistingReview.rating} readOnly size="sm" />
+                      </div>
+                      <p className="text-xs text-gray-700 dark:text-gray-300 italic line-clamp-2">
+                        "{myExistingReview.comment}"
+                      </p>
+                    </div>
                     <Button
-                      type="button"
+                      size="sm"
                       variant="outline"
                       onClick={() => {
-                        setEditingReviewId(null);
-                        setNewReviewComment('');
-                        setNewReviewRating(5);
+                        setEditingReviewId(myExistingReview._id);
+                        setNewReviewRating(myExistingReview.rating);
+                        setNewReviewComment(myExistingReview.comment);
                       }}
+                      leftIcon={<FiEdit2 className="h-3.5 w-3.5" />}
+                      className="border-primary-600 text-primary-600 hover:bg-primary-50 shrink-0 font-bold"
                     >
-                      Cancel
+                      Edit Your Review
                     </Button>
-                  )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-base font-bold text-gray-900 dark:text-white">
+                        {editingReviewId ? 'Edit Your Review' : 'Write a Customer Review'}
+                      </h4>
+                      {editingReviewId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingReviewId(null);
+                            setNewReviewComment('');
+                            setNewReviewRating(5);
+                          }}
+                          className="text-xs font-semibold text-gray-500 hover:text-gray-700 underline"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
+                    </div>
+                    <form onSubmit={handleReviewSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          Rating
+                        </label>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setNewReviewRating(star)}
+                              className="focus:outline-none transition-transform hover:scale-110"
+                            >
+                              <FiStar
+                                className={`h-6 w-6 ${
+                                  star <= newReviewRating
+                                    ? 'text-amber-400 fill-amber-400'
+                                    : 'text-gray-300 dark:text-gray-600'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                          <span className="ml-2 text-xs font-bold text-gray-700 dark:text-gray-300">
+                            {newReviewRating} / 5
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                          Your Review / Comment
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={newReviewComment}
+                          onChange={(e) => setNewReviewComment(e.target.value)}
+                          placeholder="Write your experience with this product..."
+                          required
+                          className="w-full px-4 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 resize-none placeholder-gray-400"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Button
+                          type="submit"
+                          disabled={isSubmittingReview || !newReviewComment.trim()}
+                          className="w-full sm:w-auto font-bold bg-primary-600 hover:bg-primary-700 text-white"
+                        >
+                          {isSubmittingReview
+                            ? editingReviewId
+                              ? 'Updating...'
+                              : 'Submitting...'
+                            : editingReviewId
+                            ? 'Update Review'
+                            : 'Submit Review'}
+                        </Button>
+                        {editingReviewId && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingReviewId(null);
+                              setNewReviewComment('');
+                              setNewReviewRating(5);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    </form>
+                  </div>
+                )
+              ) : (
+                <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/50 p-5 flex items-start gap-3">
+                  <div className="h-8 w-8 rounded-full bg-primary-100 dark:bg-primary-950/40 text-primary-600 flex items-center justify-center shrink-0">
+                    <FiCheck className="h-4 w-4" />
+                  </div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    <span className="font-bold text-gray-900 dark:text-white block mb-0.5 text-sm">
+                      Verified Buyer Reviews
+                    </span>
+                    Reviews can only be submitted by verified customers who have purchased and received this product.
+                    If you have already ordered this item, you can review it directly from your{' '}
+                    <Link to="/my-orders" className="text-primary-600 font-bold hover:underline">
+                      My Orders
+                    </Link>{' '}
+                    page.
+                  </div>
                 </div>
-              </form>
-            </div>
+              )
+            ) : (
+              <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/50 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="text-xs text-gray-600 dark:text-gray-400">
+                  <span className="font-bold text-gray-900 dark:text-white block mb-0.5 text-sm">
+                    Have you purchased this product?
+                  </span>
+                  Please log in to your customer account to write a review.
+                </div>
+                <Link
+                  to="/login"
+                  className="px-4 py-2 text-xs font-bold bg-primary-600 hover:bg-primary-700 text-white rounded-xl shrink-0 text-center"
+                >
+                  Log In
+                </Link>
+              </div>
+            )}
 
-            {/* List of Reviews */}
-            <div className="space-y-4">
+            {/* List of Customer Reviews */}
+            <div className="space-y-4 pt-2">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                Customer Reviews ({reviews.length})
+              </h4>
               {reviews.length === 0 ? (
-                <p className="text-sm text-gray-500 italic">No reviews yet. Be the first to review this product after purchasing!</p>
+                <div className="text-center py-8 bg-gray-50/50 dark:bg-gray-900/30 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
+                  <p className="text-sm text-gray-500 italic">
+                    No reviews yet. Be the first verified customer to review this product!
+                  </p>
+                </div>
               ) : (
                 reviews.map((review: any) => {
-                  const isMyReview = currentUser && (
-                    review.user?._id === (currentUser as any)._id ||
-                    review.user?.id === (currentUser as any)._id ||
-                    review.user === (currentUser as any)._id
-                  );
+                  const isMyReview =
+                    currentUser &&
+                    (review.user?._id === (currentUser as any)._id ||
+                      review.user?.id === (currentUser as any)._id ||
+                      review.user === (currentUser as any)._id ||
+                      review.user?._id === (currentUser as any).id ||
+                      review.user?.id === (currentUser as any).id ||
+                      review.user === (currentUser as any).id);
 
                   const isAdmin = currentUser?.role === 'admin';
 
                   return (
-                    <div key={review._id} className="border-b border-gray-100 dark:border-gray-800 pb-4">
+                    <div
+                      key={review._id || review.id}
+                      className="border-b border-gray-100 dark:border-gray-800 pb-5 pt-1"
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-indigo-50 font-bold text-indigo-700 flex items-center justify-center text-xs uppercase">
-                            {review.user?.name ? review.user.name.substring(0, 2) : 'AN'}
+                          <div className="h-10 w-10 rounded-full bg-primary-100 dark:bg-primary-950/50 font-bold text-primary-700 dark:text-primary-300 flex items-center justify-center text-xs uppercase shadow-sm">
+                            {review.user?.name ? review.user.name.substring(0, 2) : 'CU'}
                           </div>
                           <div>
-                            <h5 className="text-sm font-bold text-gray-900 dark:text-white">{review.user?.name || 'Anonymous User'}</h5>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="text-sm font-bold text-gray-900 dark:text-white">
+                                {review.user?.name || 'Verified Customer'}
+                              </h5>
+                              {review.verifiedPurchase && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50">
+                                  <FiCheck className="h-3 w-3" /> Verified Purchase
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
                               <RatingComponent value={review.rating} readOnly size="sm" />
                               <span className="text-[10px] text-gray-400">
-                                {new Date(review.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                {new Date(review.createdAt).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
                               </span>
                             </div>
                           </div>
@@ -664,7 +793,7 @@ export const ProductDetails: React.FC = () => {
                                 setEditingReviewId(review._id);
                                 setNewReviewRating(review.rating);
                                 setNewReviewComment(review.comment);
-                                window.scrollTo({ top: 400, behavior: 'smooth' });
+                                window.scrollTo({ top: 450, behavior: 'smooth' });
                               }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/30 transition-colors"
                               title="Edit Review"
@@ -677,14 +806,14 @@ export const ProductDetails: React.FC = () => {
                               type="button"
                               onClick={() => handleDeleteReview(review._id)}
                               className="p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-                              title={isAdmin && !isMyReview ? "Delete / Reject Review (Admin)" : "Delete Review"}
+                              title={isAdmin && !isMyReview ? 'Delete / Reject Review (Admin)' : 'Delete Review'}
                             >
                               <FiTrash2 className="h-4 w-4" />
                             </button>
                           )}
                         </div>
                       </div>
-                      <p className="mt-2.5 text-xs text-gray-600 dark:text-gray-400">
+                      <p className="mt-2.5 text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
                         {review.comment}
                       </p>
                     </div>
@@ -705,10 +834,7 @@ export const ProductDetails: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {relatedProducts.map((p) => (
-              <ProductCard
-                key={p.id}
-                product={p}
-              />
+              <ProductCard key={p.id} product={p} />
             ))}
           </div>
         </div>

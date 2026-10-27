@@ -6,6 +6,7 @@ import {
   FiSearch,
   FiX,
   FiTag,
+  FiDownload,
 } from 'react-icons/fi';
 import axios from 'axios';
 import { api } from '../../services/api';
@@ -13,6 +14,7 @@ import { notifySuccess, notifyError } from '../../components/Toast';
 import { Modal } from '../../components/Modal';
 import Button from '../../components/Button';
 import { TableSkeleton } from '../../components/SkeletonLoader';
+import { exportBrandsPdf } from '../../utils/pdfExport';
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -180,6 +182,15 @@ export const AdminBrands: React.FC = () => {
 
   // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  const handleDownloadPdf = () => {
+    if (brands.length === 0) {
+      notifyError('No brands available to export');
+      return;
+    }
+    exportBrandsPdf(brands);
+    notifySuccess('Brands report downloaded successfully!');
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
 
@@ -191,12 +202,21 @@ export const AdminBrands: React.FC = () => {
             {loading ? 'Loadingâ€¦' : `${brands.length} brand${brands.length !== 1 ? 's' : ''} registered`}
           </p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors"
-        >
-          <FiPlus className="h-4 w-4" /> Add Brand
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadPdf}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <FiDownload className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+            Download PDF Report
+          </button>
+          <button
+            onClick={openAddModal}
+            className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors"
+          >
+            <FiPlus className="h-4 w-4" /> Add Brand
+          </button>
+        </div>
       </div>
 
       {/* â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}

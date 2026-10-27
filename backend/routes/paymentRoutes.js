@@ -5,6 +5,7 @@ const {
   handleStripeWebhook,
   createRazorpayPaymentOrder,
   verifyRazorpayPayment,
+  handleRazorpayWebhook,
   confirmCODOrder,
   markCODCollected
 } = require('../controllers/paymentController');
@@ -29,8 +30,10 @@ router.post(
 // ── Razorpay Routes ────────────────────────────────────────────────────
 // POST /api/v1/payment/razorpay/create-order  – create Razorpay order
 // POST /api/v1/payment/razorpay/verify        – verify HMAC signature & update order
+// POST /api/v1/payment/razorpay/webhook       – Razorpay webhook (verified by x-razorpay-signature)
 router.post('/razorpay/create-order', protect, createRazorpayPaymentOrder);
 router.post('/razorpay/verify', protect, verifyRazorpayPayment);
+router.post('/razorpay/webhook', handleRazorpayWebhook);
 
 // ── Cash on Delivery Routes ────────────────────────────────────────────
 // POST /api/v1/payment/cod/confirm            – confirm COD order (customer)

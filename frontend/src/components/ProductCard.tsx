@@ -11,6 +11,7 @@ import { AppDispatch, RootState } from '../redux/store';
 import { addToCartAsync } from '../redux/slices/cartSlice';
 import { toggleWishlistAsync } from '../redux/slices/wishlistSlice';
 import { notifySuccess, notifyError } from './Toast';
+import { peacockWallArtFront } from '../assets';
 
 export interface ProductCardProps {
   product: Product;
@@ -64,8 +65,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     return '';
   };
 
-  const fallbackImage =
-    'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80';
+  const fallbackImage = peacockWallArtFront;
 
   const firstImg = images && images.length > 0 ? resolveImageUrl(images[0]) : '';
   const mainImage = firstImg || fallbackImage;
@@ -118,6 +118,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <img
           src={mainImage}
           alt={title}
+          loading="lazy"
+          decoding="async"
           onError={(e) => {
             (e.target as HTMLImageElement).src = fallbackImage;
           }}

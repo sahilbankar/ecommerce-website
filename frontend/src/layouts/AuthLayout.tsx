@@ -21,7 +21,7 @@ export const AuthLayout: React.FC = () => {
           </Link>
 
           <h2 className="text-4xl font-extrabold tracking-tight leading-none text-white">
-            Welcome to <span className="underline decoration-indigo-400 decoration-wavy">E-SHOP</span>
+            Welcome to <span className="underline decoration-indigo-400 decoration-wavy">Shri Home Decor</span>
           </h2>
 
           <p className="text-base text-primary-100 font-medium">
@@ -61,7 +61,7 @@ export const AuthLayout: React.FC = () => {
               Back
             </Link>
             <span className="text-lg font-bold tracking-tight text-primary-600 dark:text-primary-400">
-              🛒 E-SHOP
+              🛒 Shree Home Decor
             </span>
           </div>
 

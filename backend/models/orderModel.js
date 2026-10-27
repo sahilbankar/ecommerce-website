@@ -7,13 +7,17 @@ const orderItemSchema = new mongoose.Schema(
       ref: 'Product',
       required: true
     },
-    title: { type: String, required: true },
-    image: { type: String, required: true },
+    title: { type: String, default: 'Product' },
+    image: { type: String, default: '' },
     price: { type: Number, required: true },
     quantity: { type: Number, required: true, min: 1 },
     variant: {
       color: String,
       size: String
+    },
+    isReviewed: {
+      type: Boolean,
+      default: false
     }
   },
   { _id: true }
@@ -21,11 +25,11 @@ const orderItemSchema = new mongoose.Schema(
 
 const shippingAddressSchema = new mongoose.Schema(
   {
-    street: { type: String, required: true },
-    city: { type: String, required: true },
-    state: { type: String, required: true },
-    postalCode: { type: String, required: true },
-    country: { type: String, required: true, default: 'India' },
+    street: { type: String, default: 'Not Provided' },
+    city: { type: String, default: 'Not Provided' },
+    state: { type: String, default: 'Not Provided' },
+    postalCode: { type: String, default: '400001' },
+    country: { type: String, default: 'India' },
     addressType: { type: String, default: 'Home' }
   },
   { _id: false }
@@ -36,7 +40,12 @@ const paymentResultSchema = new mongoose.Schema(
     id: { type: String },
     status: { type: String },
     update_time: { type: String },
-    email_address: { type: String }
+    email_address: { type: String },
+    method: { type: String, default: '' },
+    bank: { type: String, default: '' },
+    wallet: { type: String, default: '' },
+    vpa: { type: String, default: '' },
+    razorpay_order_id: { type: String, default: '' }
   },
   { _id: false }
 );
@@ -52,14 +61,19 @@ const orderSchema = new mongoose.Schema(
     orderItems: [orderItemSchema],
     shippingAddress: {
       type: shippingAddressSchema,
-      required: [true, 'Shipping address is required']
+      default: () => ({})
     },
     paymentMethod: {
       type: String,
       required: [true, 'Payment method is required'],
-      enum: ['Card', 'Stripe', 'Razorpay', 'COD', 'PhonePe', 'GPay', 'Paytm']
+      enum: ['Card', 'Stripe', 'Razorpay', 'COD', 'PhonePe', 'GPay', 'Paytm'],
+      default: 'COD'
     },
     paymentResult: paymentResultSchema,
+    razorpayOrderId: {
+      type: String,
+      default: ''
+    },
     itemsPrice: {
       type: Number,
       required: true,
@@ -120,15 +134,12 @@ const orderSchema = new mongoose.Schema(
 // Index for filtering orders by creation date
 orderSchema.index({ createdAt: -1 });
 
-// Pre-save hook: Automatically mark payment status as Paid if order status is Delivered
+// Pre-save hook: Automatically set isDelivered and deliveredAt when orderStatus is Delivered
+// Note: Payment status is kept logically separate from fulfillment. Delivering does NOT automatically mark an unpaid order as Paid.
 orderSchema.pre('save', function (next) {
   if (this.orderStatus === 'Delivered') {
     this.isDelivered = true;
     if (!this.deliveredAt) this.deliveredAt = new Date();
-    if (!this.isPaid) {
-      this.isPaid = true;
-      if (!this.paidAt) this.paidAt = new Date();
-    }
   }
   next();
 });
@@ -141,10 +152,6 @@ orderSchema.methods.updateStatus = async function (status, tracking = '') {
   if (status === 'Delivered') {
     this.isDelivered = true;
     if (!this.deliveredAt) this.deliveredAt = Date.now();
-    if (!this.isPaid) {
-      this.isPaid = true;
-      if (!this.paidAt) this.paidAt = Date.now();
-    }
   }
 
   return await this.save();

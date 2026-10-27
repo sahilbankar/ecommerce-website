@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { API_BASE_URL } from '../constants';
 
 export const api = axios.create({
@@ -8,6 +8,88 @@ export const api = axios.create({
   },
   withCredentials: true, // For HTTP-only cookies like refresh token
 });
+
+// Cache & in-flight deduplication store for idempotent GET requests
+interface CacheEntry {
+  data: any;
+  status: number;
+  statusText: string;
+  headers: any;
+  config: any;
+  timestamp: number;
+}
+
+const apiCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<any>>();
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+
+export const clearApiCache = () => {
+  apiCache.clear();
+};
+
+const getCacheKey = (config: any): string => {
+  const params = config.params ? JSON.stringify(config.params) : '';
+  return `${config.method || 'get'}:${config.url || ''}:${params}`;
+};
+
+// Custom wrapper for deduplicated & cached GET requests
+const originalGet = api.get.bind(api);
+api.get = function <T = any, R = AxiosResponse<T>, D = any>(
+  url: string,
+  config?: AxiosRequestConfig<D>
+): Promise<R> {
+  // Only cache and deduplicate public read endpoints like /products, /categories, /coupons
+  const isCachable =
+    url.startsWith('/products') ||
+    url.startsWith('/categories') ||
+    url.startsWith('/coupons/active');
+
+  if (!isCachable) {
+    return originalGet(url, config);
+  }
+
+  const key = getCacheKey({ method: 'get', url, params: config?.params });
+
+  // 1. Return fresh cached response if available
+  const cached = apiCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return Promise.resolve({
+      data: cached.data,
+      status: cached.status,
+      statusText: cached.statusText,
+      headers: cached.headers,
+      config: cached.config,
+    } as unknown as R);
+  }
+
+  // 2. Return in-flight request if another identical request is already active
+  if (inFlightRequests.has(key)) {
+    return inFlightRequests.get(key) as Promise<R>;
+  }
+
+  // 3. Dispatch fresh request and share in-flight promise
+  const requestPromise = originalGet<T, R, D>(url, config)
+    .then((response) => {
+      const resp = response as unknown as AxiosResponse;
+      apiCache.set(key, {
+        data: resp.data,
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: resp.headers,
+        config: resp.config,
+        timestamp: Date.now(),
+      });
+      inFlightRequests.delete(key);
+      return response;
+    })
+    .catch((err) => {
+      inFlightRequests.delete(key);
+      throw err;
+    });
+
+  inFlightRequests.set(key, requestPromise);
+  return requestPromise;
+};
 
 // Request Interceptor: Attach access token if present
 api.interceptors.request.use(

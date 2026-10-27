@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../redux/store';
@@ -21,6 +22,14 @@ import {
   FiTruck,
   FiTrash2
 } from 'react-icons/fi';
+
+const getProductId = (prod: any): string => {
+  if (!prod) return "";
+  if (typeof prod === "string") return prod;
+  if (typeof prod === "object" && prod._id) return String(prod._id);
+  if (typeof prod === "object" && prod.id) return String(prod.id);
+  return String(prod);
+};
 
 const STATUS_STEPS = ['Pending', 'Confirmed', 'Processing', 'Shipped', 'Out for Delivery', 'Delivered'];
 
@@ -131,7 +140,8 @@ export const MyOrders: React.FC = () => {
     }
     const checkReview = async () => {
       try {
-        const res = await api.get(`/reviews?productId=${reviewModal.productId}`);
+        const prodId = getProductId(reviewModal.productId);
+        const res = await api.get(`/reviews?productId=${prodId}`);
         const reviews = res.data?.data?.reviews || [];
         const myRev = reviews.find((r: any) =>
           r.user?._id === user?._id || r.user?.id === user?._id || r.user === user?._id
@@ -165,7 +175,7 @@ export const MyOrders: React.FC = () => {
       } else {
         await api.post('/reviews', {
           orderId: reviewModal.orderId,
-          productId: reviewModal.productId,
+          productId: getProductId(reviewModal.productId),
           rating,
           comment: comment.trim()
         });
@@ -235,6 +245,112 @@ export const MyOrders: React.FC = () => {
 
   const canCancel = (order: Order) =>
     !['Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'].includes(order.orderStatus);
+
+  const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
+
+  const handleRetryPayment = async (orderToPay: Order) => {
+    if (!navigator.onLine) {
+      notifyError('Network connection lost. Please check your internet connection.');
+      return;
+    }
+
+    setRetryingOrderId(orderToPay._id);
+    try {
+      // Ensure Razorpay SDK is ready or dynamically inject it
+      if (!window.Razorpay) {
+        const loaded = await new Promise<boolean>((resolve) => {
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+          document.body.appendChild(script);
+        });
+        if (!loaded || !window.Razorpay) {
+          throw new Error('Unable to initialize Razorpay checkout. Please check your connection or disable ad-blockers.');
+        }
+      }
+
+      const { data: rzpData } = await api.post('/payment/razorpay/create-order', {
+        amount: orderToPay.totalPrice,
+        currency: 'INR',
+        orderId: orderToPay._id,
+      });
+
+      const { razorpayOrderId, amount: rzpAmount, keyId } = rzpData?.data || {};
+      if (!razorpayOrderId || !keyId) {
+        throw new Error('Failed to initiate payment session. Please try again.');
+      }
+
+      const options = {
+        key: keyId,
+        amount: rzpAmount,
+        currency: 'INR',
+        name: 'Shree Home Decor',
+        description: `Order #${orderToPay._id.slice(-8).toUpperCase()}`,
+        order_id: razorpayOrderId,
+        prefill: {
+          name: user?.name || '',
+          email: user?.email || '',
+        },
+        notes: {
+          orderId: orderToPay._id,
+          customerEmail: user?.email || '',
+        },
+        theme: {
+          color: '#4f46e5',
+          backdrop_color: 'rgba(0,0,0,0.6)',
+        },
+        modal: {
+          backdropclose: false,
+          escape: false,
+          confirm_close: true,
+          animation: true,
+          ondismiss: () => {
+            notifyError('Payment window closed. You can retry anytime.');
+            setRetryingOrderId(null);
+          },
+        },
+        retry: {
+          enabled: true,
+          max_count: 3,
+        },
+        handler: async (response: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => {
+          try {
+            await api.post('/payment/razorpay/verify', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              orderId: orderToPay._id,
+            });
+            notifySuccess('Payment successful! Your order has been confirmed.');
+            dispatch(fetchMyOrders());
+            if (selectedOrderModal && selectedOrderModal._id === orderToPay._id) {
+              setSelectedOrderModal((prev) => prev ? { ...prev, isPaid: true, orderStatus: 'Processing' } : null);
+            }
+          } catch (err: any) {
+            notifyError(err?.response?.data?.message || 'Payment verification failed. Please contact support.');
+          } finally {
+            setRetryingOrderId(null);
+          }
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (response: any) => {
+        const errorDesc = response?.error?.description || response?.error?.reason || 'Payment failed. Please try a different payment method.';
+        notifyError(errorDesc);
+        setRetryingOrderId(null);
+      });
+      rzp.open();
+    } catch (err: any) {
+      notifyError(err?.message || 'Failed to open payment gateway.');
+      setRetryingOrderId(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -306,7 +422,12 @@ export const MyOrders: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-gray-400 font-semibold uppercase tracking-wider">Payment</p>
-                  <p className="font-bold text-gray-800 dark:text-gray-200 mt-0.5">{order.paymentMethod}</p>
+                  <p className="font-bold text-gray-800 dark:text-gray-200 mt-0.5">
+                    {order.paymentMethod}{' '}
+                    <span className={`ml-1 text-[11px] font-extrabold ${order.isPaid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                      ({order.isPaid ? 'Paid' : 'Pending'})
+                    </span>
+                  </p>
                 </div>
               </div>
 
@@ -349,6 +470,18 @@ export const MyOrders: React.FC = () => {
                       </Button>
                     )}
                   </>
+                )}
+                {/* Pay Now Button for Unpaid Orders */}
+                {order.paymentMethod !== 'COD' && !order.isPaid && order.orderStatus !== 'Cancelled' && (
+                  <Button
+                    size="sm"
+                    onClick={() => handleRetryPayment(order)}
+                    disabled={retryingOrderId === order._id}
+                    leftIcon={<FiCreditCard className="h-3.5 w-3.5" />}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm"
+                  >
+                    {retryingOrderId === order._id ? 'Opening...' : 'Pay Now'}
+                  </Button>
                 )}
                 {/* Check Order Button */}
                 <Button
@@ -461,7 +594,8 @@ export const MyOrders: React.FC = () => {
                             if (!reviewedItem) return;
                             if (!window.confirm('Are you sure you want to cancel?')) return;
                             try {
-                              const res = await api.get(`/reviews?productId=${reviewedItem.product}`);
+                              const prodId = getProductId(reviewedItem.product);
+                              const res = await api.get(`/reviews?productId=${prodId}`);
                               const reviews = res.data?.data?.reviews || [];
                               const myRev = reviews.find((r: any) =>
                                 r.user?._id === user?._id || r.user?.id === user?._id || r.user === user?._id
@@ -687,7 +821,8 @@ export const MyOrders: React.FC = () => {
                             onClick={async () => {
                               if (!window.confirm('Are you sure you want to cancel?')) return;
                               try {
-                                const res = await api.get(`/reviews?productId=${item.product}`);
+                                const prodId = getProductId(item.product);
+                                const res = await api.get(`/reviews?productId=${prodId}`);
                                 const reviews = res.data?.data?.reviews || [];
                                 const myRev = reviews.find((r: any) =>
                                   r.user?._id === user?._id || r.user?.id === user?._id || r.user === user?._id
@@ -794,39 +929,52 @@ export const MyOrders: React.FC = () => {
                 Created on {formatDate(selectedOrderModal?.createdAt)}
               </span>
 
-              {canCancel(selectedOrderModal) ? (
-                <>
-                  {confirmCancelId === selectedOrderModal?._id ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-600 dark:text-gray-400 font-semibold">Confirm cancellation?</span>
+              <div className="flex items-center gap-2">
+                {selectedOrderModal?.paymentMethod !== 'COD' && !selectedOrderModal?.isPaid && selectedOrderModal?.orderStatus !== 'Cancelled' && (
+                  <Button
+                    size="sm"
+                    onClick={() => handleRetryPayment(selectedOrderModal)}
+                    disabled={retryingOrderId === selectedOrderModal._id}
+                    leftIcon={<FiCreditCard className="h-4 w-4" />}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  >
+                    {retryingOrderId === selectedOrderModal._id ? 'Opening...' : 'Pay Now'}
+                  </Button>
+                )}
+
+                {canCancel(selectedOrderModal) ? (
+                  <>
+                    {confirmCancelId === selectedOrderModal?._id ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600 dark:text-gray-400 font-semibold">Confirm cancellation?</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setConfirmCancelId(null)}
+                        >
+                          No
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleCancelOrder(selectedOrderModal?._id)}
+                          disabled={isCancelling && cancellingId === selectedOrderModal?._id}
+                          className="!bg-red-600 hover:!bg-red-700 border-red-600 text-white"
+                        >
+                          {isCancelling && cancellingId === selectedOrderModal?._id ? 'Cancelling...' : 'Yes, Cancel Order'}
+                        </Button>
+                      </div>
+                    ) : (
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => setConfirmCancelId(null)}
+                        onClick={() => setConfirmCancelId(selectedOrderModal?._id)}
+                        leftIcon={<FiXCircle className="h-4 w-4" />}
+                        className="!bg-red-600 hover:!bg-red-700 text-white font-bold"
                       >
-                        No
+                        Cancel Order
                       </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleCancelOrder(selectedOrderModal?._id)}
-                        disabled={isCancelling && cancellingId === selectedOrderModal?._id}
-                        className="!bg-red-600 hover:!bg-red-700 border-red-600 text-white"
-                      >
-                        {isCancelling && cancellingId === selectedOrderModal?._id ? 'Cancelling...' : 'Yes, Cancel Order'}
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => setConfirmCancelId(selectedOrderModal?._id)}
-                      leftIcon={<FiXCircle className="h-4 w-4" />}
-                      className="!bg-red-600 hover:!bg-red-700 text-white font-bold"
-                    >
-                      Cancel Order
-                    </Button>
-                  )}
-                </>
-              ) : selectedOrderModal?.orderStatus === 'Cancelled' ? (
+                    )}
+                  </>
+                ) : selectedOrderModal?.orderStatus === 'Cancelled' ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-950/40 px-3 py-1.5 rounded-lg flex items-center gap-1">
                     <FiXCircle className="h-4 w-4" /> Cancelled
@@ -867,6 +1015,7 @@ export const MyOrders: React.FC = () => {
                 </span>
               )}
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -877,7 +1026,7 @@ export const MyOrders: React.FC = () => {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setReviewModal(null)} />
           <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 p-6 z-10 animate-fade-in">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Write a Review</h3>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">{existingReviewId ? "Edit Your Review" : "Write a Review"}</h3>
               <button onClick={() => setReviewModal(null)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
                 <FiX className="h-5 w-5" />
               </button>

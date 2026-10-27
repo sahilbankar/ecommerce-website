@@ -17,6 +17,7 @@ import { RootState, AppDispatch } from '../redux/store';
 import { useTheme } from '../hooks/useTheme';
 import { logout } from '../redux/slices/authSlice';
 import SearchBar from './SearchBar';
+import { shreeLogo } from '../assets';
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
@@ -52,11 +53,12 @@ export const Navbar: React.FC = () => {
             {isMobileMenuOpen ? <FiX className="h-6 w-6" /> : <FiMenu className="h-6 w-6" />}
           </button>
 
-          <Link to="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight text-primary-600 dark:text-primary-400">
-            <span>🛒</span>
-            <span className="bg-gradient-to-r from-primary-600 to-indigo-600 bg-clip-text text-transparent dark:from-primary-400 dark:to-indigo-400">
-              E-SHOP
-            </span>
+          <Link to="/" className="flex items-center">
+            <img
+              src={shreeLogo}
+              alt="Shree Home Decor"
+              className="h-11 sm:h-12 w-36 sm:w-44 md:w-48 object-contain object-left"
+            />
           </Link>
 
           {/* Desktop Nav Links */}

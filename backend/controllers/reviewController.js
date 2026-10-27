@@ -13,10 +13,11 @@ const getProductReviews = asyncHandler(async (req, res, next) => {
   }
 
   const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 10;
+  const limit = parseInt(req.query.limit, 10) || 100;
   const skip = (page - 1) * limit;
 
-  const filter = { product: req.query.productId, status: 'approved' };
+  // Retrieve approved and verified customer reviews (exclude rejected)
+  const filter = { product: req.query.productId, status: { $ne: 'rejected' } };
 
   const total = await Review.countDocuments(filter);
   const reviews = await Review.find(filter)
@@ -47,7 +48,18 @@ const createReview = asyncHandler(async (req, res, next) => {
     return next(new ApiError(400, 'Rating must be between 1 and 5'));
   }
 
-  // Check if user already reviewed this product -> Update existing review (upsert)
+  // Check if user has purchased this product
+  const hasPurchased = await Order.findOne({
+    user: req.user._id,
+    'orderItems.product': productId,
+    orderStatus: { $ne: 'Cancelled' }
+  });
+
+  if (!hasPurchased && req.user.role !== 'admin') {
+    return next(new ApiError(403, 'You can only review products that you have purchased and received'));
+  }
+
+  // Check if user already reviewed this product -> Update existing review (prevent duplicate)
   const alreadyReviewed = await Review.findOne({
     product: productId,
     user: req.user._id
@@ -57,22 +69,19 @@ const createReview = asyncHandler(async (req, res, next) => {
     alreadyReviewed.rating = Number(rating);
     if (comment) alreadyReviewed.comment = comment.trim();
     if (title !== undefined) alreadyReviewed.title = title;
-    alreadyReviewed.status = req.user.role === 'admin' ? alreadyReviewed.status : 'pending';
+    alreadyReviewed.status = 'approved';
+    alreadyReviewed.verifiedPurchase = true;
+    if (orderId || hasPurchased?._id) {
+      alreadyReviewed.order = orderId || hasPurchased._id;
+    }
     await alreadyReviewed.save();
 
     await Review.getAverageRating(productId);
     await alreadyReviewed.populate('user', 'name avatar');
     return res.status(200).json(
-      new ApiResponse(200, { review: alreadyReviewed }, 'Review submitted and sent to pending for approval')
+      new ApiResponse(200, { review: alreadyReviewed }, 'Review updated successfully')
     );
   }
-
-  // Check if user has purchased this product to mark as verified purchase
-  const hasPurchased = await Order.findOne({
-    user: req.user._id,
-    'orderItems.product': productId,
-    orderStatus: { $ne: 'Cancelled' }
-  });
 
   const reviewPayload = {
     user: req.user._id,
@@ -80,8 +89,8 @@ const createReview = asyncHandler(async (req, res, next) => {
     rating: Number(rating),
     title: title || '',
     comment: comment.trim(),
-    verifiedPurchase: !!hasPurchased,
-    status: 'pending'
+    verifiedPurchase: true,
+    status: 'approved'
   };
 
   if (orderId || hasPurchased?._id) {
@@ -94,8 +103,9 @@ const createReview = asyncHandler(async (req, res, next) => {
   await Review.getAverageRating(productId);
 
   // Mark the item as reviewed in the specific order
-  if (orderId) {
-    const order = await Order.findOne({ _id: orderId, user: req.user._id });
+  const targetOrderId = orderId || hasPurchased?._id;
+  if (targetOrderId) {
+    const order = await Order.findOne({ _id: targetOrderId, user: req.user._id });
     if (order) {
       const item = order.orderItems.find(i => i.product.toString() === productId.toString());
       if (item) {
@@ -108,7 +118,7 @@ const createReview = asyncHandler(async (req, res, next) => {
   await review.populate('user', 'name avatar');
 
   res.status(201).json(
-    new ApiResponse(201, { review }, 'Review submitted successfully and sent to pending for admin approval')
+    new ApiResponse(201, { review }, 'Review submitted successfully')
   );
 });
 
@@ -137,11 +147,12 @@ const updateReview = asyncHandler(async (req, res, next) => {
     if (status === 'rejected') review.rejectedBy = 'admin';
     if (status === 'approved') review.rejectedBy = 'none';
   } else if (req.user.role !== 'admin') {
-    review.status = 'pending';
+    review.status = 'approved';
   }
 
   await review.save();
   await Review.getAverageRating(review.product);
+  await review.populate('user', 'name avatar');
 
   res.status(200).json(
     new ApiResponse(200, { review }, 'Review updated successfully')

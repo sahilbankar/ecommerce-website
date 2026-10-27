@@ -1,17 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { notifySuccess, notifyError } from '../../components/Toast';
-import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiTag, FiPercent } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiTag, FiPercent, FiDownload } from 'react-icons/fi';
+import { exportCouponsPdf } from '../../utils/pdfExport';
 
-// @ts-ignore
-  const coupons = [
-  { id: 1, code: 'SAVE20', type: 'Percentage', value: 20, minOrder: '₹500', uses: 145, limit: 500, status: 'Active', expires: 'Aug 31, 2026' },
-  { id: 2, code: 'FLAT10', type: 'Fixed', value: 100, minOrder: '₹300', uses: 89, limit: 200, status: 'Active', expires: 'Sep 15, 2026' },
-  { id: 3, code: 'WELCOME30', type: 'Percentage', value: 30, minOrder: '₹1,000', uses: 312, limit: 1000, status: 'Active', expires: 'Dec 31, 2026' },
-  { id: 4, code: 'SUMMER50', type: 'Percentage', value: 50, minOrder: '₹2,000', uses: 200, limit: 200, status: 'Expired', expires: 'Jul 1, 2026' },
-  { id: 5, code: 'FREESHIP', type: 'Free Shipping', value: 0, minOrder: '₹250', uses: 567, limit: 2000, status: 'Active', expires: 'Oct 31, 2026' },
-  { id: 6, code: 'VIP100', type: 'Fixed', value: 500, minOrder: '₹5,000', uses: 23, limit: 50, status: 'Active', expires: 'Nov 30, 2026' },
-];
+
 
 const statusColors: Record<string, string> = {
   Active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
@@ -89,6 +82,15 @@ export const AdminCoupons: React.FC = () => {
     }
   };
 
+  const handleDownloadPdf = () => {
+    if (coupons.length === 0) {
+      notifyError('No coupons available to export');
+      return;
+    }
+    exportCouponsPdf(coupons);
+    notifySuccess('Coupons report downloaded successfully!');
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Header */}
@@ -97,12 +99,21 @@ export const AdminCoupons: React.FC = () => {
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Coupons</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{coupons.length} coupon codes</p>
         </div>
-        <button
-          onClick={() => { setEditingId(null); setForm({ code: '', type: 'Percentage', value: '', minOrder: '', limit: '', expires: '' }); setShowModal(true); }}
-          className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors"
-        >
-          <FiPlus className="h-4 w-4" /> Create Coupon
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadPdf}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <FiDownload className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+            Download PDF Report
+          </button>
+          <button
+            onClick={() => { setEditingId(null); setForm({ code: '', type: 'Percentage', value: '', minOrder: '', limit: '', expires: '' }); setShowModal(true); }}
+            className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors"
+          >
+            <FiPlus className="h-4 w-4" /> Create Coupon
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

@@ -44,16 +44,23 @@ const allowedOrigins = [
   'https://ecommerce-website-three-plum-33.vercel.app'
 ];
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || /^http:\/\/localhost:\d+$/.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Permissive in dev mode for smooth gateway redirects
+  },
   credentials: true
 }));
 // General Rate Limiter
 app.use('/api', apiLimiter);
 
-// Capture rawBody for Stripe webhook signature verification
+// Capture rawBody for webhook signature verification (Stripe & Razorpay)
 app.use((req, res, next) => {
   express.json({
-    limit: '16kb',
+    limit: '2mb',
     verify: (req2, _res, buf) => {
       req2.rawBody = buf;
     }

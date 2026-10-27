@@ -43,7 +43,7 @@ const reviewSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
-      default: 'pending'
+      default: 'approved'
     },
     rejectedBy: {
       type: String,
@@ -62,7 +62,7 @@ reviewSchema.index({ product: 1, user: 1 });
 reviewSchema.statics.getAverageRating = async function (productId) {
   const prodId = typeof productId === 'string' ? new mongoose.Types.ObjectId(productId) : productId;
   const stats = await this.aggregate([
-    { $match: { product: prodId, status: 'approved' } },
+    { $match: { product: prodId, status: { $ne: 'rejected' } } },
     {
       $group: {
         _id: '$product',

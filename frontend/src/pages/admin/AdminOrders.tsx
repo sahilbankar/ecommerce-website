@@ -4,9 +4,10 @@ import { RootState, AppDispatch } from '../../redux/store';
 import { fetchAllOrders, updateOrderStatus, deleteOrderAsync, Order } from '../../redux/slices/orderSlice';
 import { notifySuccess, notifyError } from '../../components/Toast';
 import { formatCurrency } from '../../utils';
+import { exportOrdersPdf } from '../../utils/pdfExport';
 import {
   FiSearch, FiEye, FiEdit2, FiChevronLeft, FiChevronRight,
-  FiRefreshCw, FiAlertCircle, FiX, FiTrash2
+  FiRefreshCw, FiAlertCircle, FiX, FiTrash2, FiDownload
 } from 'react-icons/fi';
 
 const statusColors: Record<string, string> = {
@@ -101,6 +102,15 @@ export const AdminOrders: React.FC = () => {
     }
   };
 
+  const handleDownloadPdf = () => {
+    if (orders.length === 0) {
+      notifyError('No orders available to export');
+      return;
+    }
+    exportOrdersPdf(orders);
+    notifySuccess('Orders report downloaded successfully!');
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Header */}
@@ -109,12 +119,21 @@ export const AdminOrders: React.FC = () => {
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Orders</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{orders.length} orders loaded</p>
         </div>
-        <button
-          onClick={() => dispatch(fetchAllOrders({ page, limit: LIMIT, status: statusFilter }))}
-          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
-          <FiRefreshCw className="h-4 w-4" /> Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadPdf}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <FiDownload className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+            Download PDF Report
+          </button>
+          <button
+            onClick={() => dispatch(fetchAllOrders({ page, limit: LIMIT, status: statusFilter }))}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <FiRefreshCw className="h-4 w-4" /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Status Stat Cards */}
@@ -222,7 +241,7 @@ export const AdminOrders: React.FC = () => {
                         {formatDate(order.createdAt)}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => setSelectedOrder(order)}
                             className="p-1.5 rounded-lg text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors"
@@ -232,14 +251,14 @@ export const AdminOrders: React.FC = () => {
                           </button>
                           <button
                             onClick={() => handleOpenEdit(order)}
-                            className="p-1.5 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                            className="p-1.5 rounded-lg text-blue-600 hover:text-blue-700 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
                             title="Update Status"
                           >
                             <FiEdit2 className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteOrder(order._id)}
-                            className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                             title="Delete Order"
                           >
                             <FiTrash2 className="h-4 w-4" />

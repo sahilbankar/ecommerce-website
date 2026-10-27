@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-// import { motion } from 'framer-motion';
 import { FiArrowRight, FiShield, FiTruck, FiRefreshCw, FiHeadphones } from 'react-icons/fi';
-import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '../constants/dummyData';
-import { BackendProduct, Product } from '../types';
+import { Product, Category } from '../types';
 import ProductCard from '../components/ProductCard';
 import CategoryCard from '../components/CategoryCard';
 import Button from '../components/Button';
@@ -11,48 +9,18 @@ import { useDispatch } from 'react-redux';
 import { AppDispatch } from '../redux/store';
 import { addToCartAsync } from '../redux/slices/cartSlice';
 import { notifySuccess } from '../components/Toast';
-import { api } from '../services/api';
-
-// Map backend product to frontend Product type
-const mapBackendProduct = (p: BackendProduct): Product => {
-  const catObj = typeof p.category === 'object' && p.category !== null ? p.category : null;
-  const ratingsAvg =
-    p.ratings && typeof p.ratings === 'object' ? p.ratings.average : (p.ratings as number) || 0;
-  const numReviews =
-    p.ratings && typeof p.ratings === 'object' ? p.ratings.numReviews : p.numReviews || 0;
-
-  return {
-    _id: p._id,
-    id: p._id || p.id || '',
-    title: p.title,
-    slug: p.slug || '',
-    description: p.description,
-    price: p.price,
-    discountPrice: p.discountPrice,
-    stock: p.stock,
-    category: catObj
-      ? { id: catObj._id || catObj.id || '', name: catObj.name, slug: catObj.slug || '' }
-      : String(p.category),
-    brand:
-      p.brand && typeof p.brand === 'object'
-        ? p.brand.name
-        : String(p.brand || ''),
-    // images can be [{url, public_id}] from backend — ProductCard handles both
-    images: (p.images || []) as unknown as string[],
-    ratings: ratingsAvg,
-    numReviews,
-    isFeatured: p.isFeatured,
-  };
-};
+import { productService, categoryService, couponService } from '../services';
+import { peacockWallArtRoom } from '../assets';
 
 export const Home: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
+  const [categories, setCategories] = useState<Category[]>([]);
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [newProducts, setNewProducts] = useState<Product[]>([]);
-  // @ts-ignore
   const [activeCoupons, setActiveCoupons] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const directionRef = useRef<number>(1);
@@ -72,60 +40,72 @@ export const Home: React.FC = () => {
         }
         scrollRef.current.scrollBy({ left: step * directionRef.current });
       }
-    }, 20); // Smooth continuous scroll
+    }, 20);
     return () => clearInterval(interval);
   }, [isHovered]);
 
   const heroImages = [
-    "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1516257984-b1b4d707412e?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1509631179647-0177331693ae?w=1600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1550614000-4b95d4eb7e39?w=1600&auto=format&fit=crop&q=80"
+    // Authentic Shree Home Decor Peacock Wall Art in Luxury Living Room
+    peacockWallArtRoom,
+    // Elegant living room with sofa and home decor
+    "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1600&auto=format&fit=crop&q=80",
+    // Beautiful curtains / window drapes
+    "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1600&auto=format&fit=crop&q=80",
+    // Luxury bedsheet / bedroom setup
+    "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1600&auto=format&fit=crop&q=80",
+    // Decorative cushion covers on sofa
+    "https://images.unsplash.com/photo-1567016432779-094069958ea5?w=1600&auto=format&fit=crop&q=80",
+    // Cozy home interior with soft furnishings
+    "https://images.unsplash.com/photo-1618219944342-824e40a13285?w=1600&auto=format&fit=crop&q=80",
+    // Sofa cover / couch with throw blanket
+    "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1600&auto=format&fit=crop&q=80",
+    // Bedroom with premium bedsheet and pillows
+    "https://images.unsplash.com/photo-1540518614846-7eded433c457?w=1600&auto=format&fit=crop&q=80",
+    // Modern home decor accessories
+    "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?w=1600&auto=format&fit=crop&q=80",
+    // Elegant dining / home furnishing
+    "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1600&auto=format&fit=crop&q=80"
   ];
 
-
+  // Fetch real data from backend API
   useEffect(() => {
-    const fetchHomeProducts = async () => {
+    const fetchHomeData = async () => {
       setIsLoading(true);
+      setIsCategoriesLoading(true);
+
+      // 1. Fetch categories
+      categoryService.getCategories()
+        .then((cats) => {
+          const sorted = [...cats].sort((a, b) => {
+            if (a.image && !b.image) return -1;
+            if (!a.image && b.image) return 1;
+            return 0;
+          });
+          setCategories(sorted.slice(0, 8));
+        })
+        .catch(() => setCategories([]))
+        .finally(() => setIsCategoriesLoading(false));
+
+      // 2. Fetch featured products, newest products, and active coupons concurrently
       try {
-        const [featuredRes, newestRes, couponsRes] = await Promise.all([
-          api.get('/products', { params: { isFeatured: 'true', limit: 12 } }),
-          api.get('/products', { params: { sort: 'newest', limit: 12 } }),
-          api.get('/coupons/active').catch(() => ({ data: { data: { coupons: [] } } }))
+        const [featured, newest, coupons] = await Promise.all([
+          productService.getFeaturedProducts(12).catch(() => []),
+          productService.getNewArrivals(12).catch(() => []),
+          couponService.getActiveCoupons().catch(() => [])
         ]);
 
-        const featuredRaw: BackendProduct[] = featuredRes.data?.data?.products || [];
-        const newestRaw: BackendProduct[] = newestRes.data?.data?.products || [];
-
-        let featuredMapped = featuredRaw.map(mapBackendProduct);
-        let newestMapped = newestRaw.map(mapBackendProduct);
-
-        if (featuredMapped.length === 0 && newestMapped.length > 0) {
-          featuredMapped = newestMapped;
-        }
-
-        if (featuredMapped.length === 0 && newestMapped.length === 0) {
-          featuredMapped = MOCK_PRODUCTS.filter((p) => p.isFeatured);
-          newestMapped = MOCK_PRODUCTS;
-        }
-
-        setFeaturedProducts(featuredMapped);
-        setNewProducts(newestMapped);
-        setActiveCoupons(couponsRes.data?.data?.coupons || []);
+        setFeaturedProducts(featured.length > 0 ? featured : newest.slice(0, 8));
+        setNewProducts(newest);
+        setActiveCoupons(coupons);
       } catch {
-        setFeaturedProducts(MOCK_PRODUCTS.filter((p) => p.isFeatured));
-        setNewProducts(MOCK_PRODUCTS);
+        setFeaturedProducts([]);
+        setNewProducts([]);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchHomeProducts();
+    fetchHomeData();
   }, []);
 
   const ProductSkeleton = () => (
@@ -137,6 +117,10 @@ export const Home: React.FC = () => {
         <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/4" />
       </div>
     </div>
+  );
+
+  const CategorySkeleton = () => (
+    <div className="animate-pulse rounded-2xl bg-gray-200 dark:bg-gray-800 aspect-[4/3] w-full" />
   );
 
   return (
@@ -153,7 +137,6 @@ export const Home: React.FC = () => {
           className="absolute inset-0 flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide"
           style={{ scrollBehavior: 'smooth', msOverflowStyle: 'none', scrollbarWidth: 'none' }}
         >
-
           {heroImages.map((src, i) => (
             <div key={i} className="flex-none w-full h-full snap-center relative">
               <img
@@ -161,22 +144,21 @@ export const Home: React.FC = () => {
                 alt={`Slide ${i+1}`}
                 className="w-full h-full object-cover"
               />
-              {/* Overlay gradient for better text readability */}
 
               {/* Text and Buttons Overlay on EACH image slide */}
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-4 pointer-events-none">
                 <div className="space-y-6 max-w-3xl mx-auto pointer-events-auto">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-xs font-bold uppercase tracking-wider backdrop-blur-md">
-                    ✨ New Collection 2026
+                    🏠 New Collection 2026
                   </span>
                   <h1 className="text-4xl sm:text-5xl lg:text-7xl font-extrabold tracking-tight leading-tight drop-shadow-lg">
-                    Modern Living, <br />
+                    Beautiful Homes, <br />
                     <span className="text-white">
-                      Elevated Design
+                      Crafted With Love
                     </span>
                   </h1>
-                                    <p className="text-base sm:text-xl text-gray-200 drop-shadow-md">
-                    Upgrade your routine with handpicked smart accessories, luxury essentials, and home decor items.
+                  <p className="text-base sm:text-xl text-gray-200 drop-shadow-md">
+                    Transform your home with premium curtains, bedsheets, sofa covers, cushion covers & more — only at Shree Home Decor.
                   </p>
                   
                   {activeCoupons.length > 0 && (
@@ -290,9 +272,11 @@ export const Home: React.FC = () => {
           </Link>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {MOCK_CATEGORIES.map((category) => (
-            <CategoryCard key={category.id} category={category} />
-          ))}
+          {isCategoriesLoading
+            ? Array.from({ length: 4 }).map((_, i) => <CategorySkeleton key={i} />)
+            : categories.slice(0, 8).map((category) => (
+                <CategoryCard key={category.id || category._id} category={category} />
+              ))}
         </div>
       </section>
 
@@ -304,10 +288,10 @@ export const Home: React.FC = () => {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
           {isLoading
-            ? Array.from({ length: 12 }).map((_, i) => <ProductSkeleton key={i} />)
+            ? Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={i} />)
             : featuredProducts.map((product) => (
                 <ProductCard
-                  key={product.id}
+                  key={product.id || product._id}
                   product={product}
                   onAddToCart={(p) => {
                     dispatch(addToCartAsync({ product: p }));
@@ -326,10 +310,10 @@ export const Home: React.FC = () => {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
           {isLoading
-            ? Array.from({ length: 12 }).map((_, i) => <ProductSkeleton key={i} />)
+            ? Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={i} />)
             : newProducts.map((product) => (
                 <ProductCard
-                  key={product.id}
+                  key={product.id || product._id}
                   product={product}
                   onAddToCart={(p) => {
                     dispatch(addToCartAsync({ product: p }));

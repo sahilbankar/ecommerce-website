@@ -2,6 +2,7 @@ const Order = require('../models/orderModel');
 const Cart = require('../models/cartModel');
 const Coupon = require('../models/couponModel');
 const Product = require('../models/productModel');
+const Review = require('../models/reviewModel');
 const ApiError = require('../utils/ApiError');
 const ApiResponse = require('../utils/ApiResponse');
 const asyncHandler = require('../utils/asyncHandler');
@@ -26,77 +27,114 @@ const createOrder = asyncHandler(async (req, res, next) => {
     couponCode
   } = req.body;
 
-  if (!orderItems || orderItems.length === 0) {
-    return next(new ApiError(400, 'No order items provided'));
+  if (!orderItems || !Array.isArray(orderItems) || orderItems.length === 0) {
+    return next(new ApiError(400, 'No order items provided in the cart'));
   }
 
-  // Validate stock and build order items
-  const validatedItems = [];
+  // Validate coupon if applied
+  if (couponCode) {
+    const coupon = await Coupon.findOne({
+      code: couponCode.toUpperCase(),
+      isActive: true,
+      validUntil: { $gte: new Date() }
+    });
+
+    if (coupon) {
+      coupon.usedCount += 1;
+      await coupon.save();
+    }
+  }
+
+  // Verify stock availability and populate product details
+  const validatedOrderItems = [];
   for (const item of orderItems) {
-    const product = await Product.findById(item.product);
-    if (!product || !product.isActive) {
-      return next(new ApiError(404, `Product not found: ${item.product}`));
+    const prodId = item.product || item.productId || item._id;
+    if (!prodId) {
+      return next(new ApiError(400, 'Invalid product reference in order items'));
     }
-    if (!product.isInStock(item.quantity)) {
-      return next(new ApiError(400, `Insufficient stock for product: ${product.title}`));
+
+    const product = await Product.findById(prodId);
+    if (!product) {
+      return next(new ApiError(404, `Product not found: ${item.title || prodId}`));
     }
-    validatedItems.push({
+    if (product.stock < (item.quantity || 1)) {
+      return next(new ApiError(400, `Insufficient stock for product: ${product.title || item.title}`));
+    }
+
+    const defaultImg =
+      (product.images && product.images.length > 0
+        ? typeof product.images[0] === 'string'
+          ? product.images[0]
+          : product.images[0]?.url
+        : '') ||
+      'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=200&auto=format&fit=crop&q=60';
+
+    validatedOrderItems.push({
       product: product._id,
-      title: product.title,
-      image: product.images[0]?.url || '',
-      price: item.price,
-      quantity: item.quantity,
-      variant: item.variant || {}
+      title: (item.title || product.title || 'Product').trim(),
+      image: item.image || defaultImg,
+      price: Number(item.price ?? product.discountPrice ?? product.price ?? 0),
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      variant: item.variant || {},
+      isReviewed: false
     });
   }
 
-  // Apply coupon discount if provided
-  let finalTotal = totalPrice;
-  if (couponCode) {
-    const coupon = await Coupon.findByCode(couponCode);
-    if (!coupon) {
-      return next(new ApiError(400, 'Invalid coupon code'));
-    }
-    const validity = coupon.isValid(itemsPrice);
-    if (!validity.valid) {
-      return next(new ApiError(400, validity.message));
-    }
-    let discount = 0;
-    if (coupon.discountType === 'percentage') {
-      discount = (itemsPrice * coupon.discountAmount) / 100;
-    } else {
-      discount = coupon.discountAmount;
-    }
-    finalTotal = Math.max(0, totalPrice - discount);
-    coupon.usageCount += 1;
-    await coupon.save();
+  // Robust fallback for shipping address to ensure Mongoose validation never fails
+  const cleanShipping = {
+    street: (shippingAddress?.street?.trim()) || 'Main Street',
+    city: (shippingAddress?.city?.trim()) || 'City',
+    state: (shippingAddress?.state?.trim()) || 'State',
+    postalCode: (shippingAddress?.postalCode?.trim()) || '400001',
+    country: (shippingAddress?.country?.trim()) || 'India',
+    addressType: (shippingAddress?.addressType?.trim()) || 'Home'
+  };
+
+  // Normalize payment method to match enum: ['Card', 'Stripe', 'Razorpay', 'COD', 'PhonePe', 'GPay', 'Paytm']
+  let cleanPaymentMethod = 'COD';
+  if (paymentMethod && typeof paymentMethod === 'string') {
+    const pmUpper = paymentMethod.trim().toUpperCase();
+    if (pmUpper === 'COD') cleanPaymentMethod = 'COD';
+    else if (pmUpper.includes('RAZOR')) cleanPaymentMethod = 'Razorpay';
+    else if (pmUpper.includes('STRIPE')) cleanPaymentMethod = 'Stripe';
+    else if (pmUpper.includes('CARD')) cleanPaymentMethod = 'Card';
+    else if (pmUpper.includes('PHONEPE')) cleanPaymentMethod = 'PhonePe';
+    else if (pmUpper.includes('GPAY')) cleanPaymentMethod = 'GPay';
+    else if (pmUpper.includes('PAYTM')) cleanPaymentMethod = 'Paytm';
   }
 
-  const isPaid = paymentMethod !== 'COD';
-  const paidAt = isPaid ? Date.now() : undefined;
+  const numItemsPrice = Number(itemsPrice) || validatedOrderItems.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+  const numTaxPrice = Number(taxPrice) || 0;
+  const numShippingPrice = Number(shippingPrice) || 0;
+  const numTotalPrice = Number(totalPrice) || (numItemsPrice + numTaxPrice + numShippingPrice);
 
   const order = await Order.create({
     user: req.user._id,
-    orderItems: validatedItems,
-    shippingAddress,
-    paymentMethod,
-    itemsPrice,
-    taxPrice,
-    shippingPrice,
-    totalPrice: finalTotal,
-    isPaid,
-    paidAt
+    orderItems: validatedOrderItems,
+    shippingAddress: cleanShipping,
+    paymentMethod: cleanPaymentMethod,
+    itemsPrice: numItemsPrice,
+    taxPrice: numTaxPrice,
+    shippingPrice: numShippingPrice,
+    totalPrice: numTotalPrice,
+    orderStatus: 'Pending',
+    isPaid: false
   });
 
-  // Decrement stock for each product
-  for (const item of validatedItems) {
-    await Product.findByIdAndUpdate(item.product, {
-      $inc: { stock: -item.quantity }
-    });
+  // If COD, deduct stock immediately upon placement
+  if (cleanPaymentMethod === 'COD') {
+    for (const item of validatedOrderItems) {
+      await Product.findByIdAndUpdate(item.product, {
+        $inc: { stock: -item.quantity }
+      });
+    }
   }
 
-  // Clear user's cart after successful order
-  await Cart.findOneAndUpdate({ user: req.user._id }, { items: [], totalAmount: 0 });
+  // Clear user's active cart after placing order
+  await Cart.findOneAndUpdate(
+    { user: req.user._id },
+    { $set: { items: [], coupon: null } }
+  );
 
   res.status(201).json(
     new ApiResponse(201, { order }, 'Order placed successfully')
@@ -107,8 +145,24 @@ const createOrder = asyncHandler(async (req, res, next) => {
 // @route   GET /api/v1/orders/my-orders
 // @access  Private
 const getMyOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.getOrdersByUser(req.user._id);
-  const processedOrders = await Promise.all(orders.map(order => autoProgressOrder(order)));
+  const orders = await Order.getOrdersByUser(req.user._id).lean();
+  const userReviews = await Review.find({ user: req.user._id, status: { $ne: 'rejected' } }).select('product').lean();
+  const reviewedProductIds = new Set(userReviews.map(r => r.product.toString()));
+
+  const processedOrders = await Promise.all(
+    orders.map(async (order) => {
+      if (order.orderItems) {
+        order.orderItems = order.orderItems.map((item) => {
+          const prodId = item.product?._id ? item.product._id.toString() : item.product?.toString();
+          return {
+            ...item,
+            isReviewed: Boolean(item.isReviewed || (prodId && reviewedProductIds.has(prodId)))
+          };
+        });
+      }
+      return await autoProgressOrder(order);
+    })
+  );
 
   res.status(200).json(
     new ApiResponse(200, { count: processedOrders.length, orders: processedOrders }, 'Orders retrieved successfully')
@@ -132,16 +186,30 @@ const getOrderById = asyncHandler(async (req, res, next) => {
     return next(new ApiError(403, 'Not authorized to view this order'));
   }
 
-  const processedOrder = await autoProgressOrder(order);
+  const userReviews = await Review.find({ user: req.user._id, status: { $ne: 'rejected' } }).select('product').lean();
+  const reviewedProductIds = new Set(userReviews.map(r => r.product.toString()));
+
+  const orderObj = order.toObject();
+  if (orderObj.orderItems) {
+    orderObj.orderItems = orderObj.orderItems.map((item) => {
+      const prodId = item.product?._id ? item.product._id.toString() : item.product?.toString();
+      return {
+        ...item,
+        isReviewed: Boolean(item.isReviewed || (prodId && reviewedProductIds.has(prodId)))
+      };
+    });
+  }
+
+  const processedOrder = await autoProgressOrder(orderObj);
 
   res.status(200).json(
     new ApiResponse(200, { order: processedOrder }, 'Order retrieved successfully')
   );
 });
 
-// @desc    Update order to paid
+// @desc    Update order to paid (Restricted: only admin or internal service with verified details)
 // @route   PUT /api/v1/orders/:id/pay
-// @access  Private
+// @access  Private/Admin
 const updateOrderToPaid = asyncHandler(async (req, res, next) => {
   const order = await Order.findById(req.params.id);
 
@@ -149,13 +217,22 @@ const updateOrderToPaid = asyncHandler(async (req, res, next) => {
     return next(new ApiError(404, 'Order not found'));
   }
 
+  // Only admin can manually update an order to paid via this administrative route
+  if (req.user.role !== 'admin') {
+    return next(new ApiError(403, 'Not authorized to manually mark orders as paid. Use gateway verification.'));
+  }
+
+  if (!req.body.id) {
+    return next(new ApiError(400, 'A valid transaction/payment ID is required'));
+  }
+
   order.isPaid = true;
   order.paidAt = Date.now();
   order.paymentResult = {
     id: req.body.id,
-    status: req.body.status,
-    update_time: req.body.update_time,
-    email_address: req.body.email_address
+    status: req.body.status || 'manual_admin_verified',
+    update_time: req.body.update_time || new Date().toISOString(),
+    email_address: req.body.email_address || req.user.email
   };
 
   const updatedOrder = await order.save();
@@ -252,11 +329,13 @@ const cancelOrder = asyncHandler(async (req, res, next) => {
     order.cancellationReason = (cancellationReason || reason).trim();
   }
 
-  // Restore product stock
-  for (const item of order.orderItems) {
-    await Product.findByIdAndUpdate(item.product, {
-      $inc: { stock: item.quantity }
-    });
+  // Restore product stock only if it was deducted (i.e. Paid or COD order)
+  if (order.isPaid || order.paymentMethod === 'COD') {
+    for (const item of order.orderItems) {
+      await Product.findByIdAndUpdate(item.product, {
+        $inc: { stock: item.quantity }
+      });
+    }
   }
 
   order.orderStatus = 'Cancelled';

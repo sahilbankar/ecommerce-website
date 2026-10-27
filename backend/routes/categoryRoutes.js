@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   getCategories,
+  getCategoryById,
   getCategoryBySlug,
   createCategory,
   updateCategory,
@@ -21,6 +22,7 @@ router
 
 router
   .route('/:id')
+  .get(getCategoryById)
   .put(protect, admin, updateCategory)
   .delete(protect, admin, deleteCategory);
 
